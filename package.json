@@ -3,8 +3,13 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22 <25"
+  },
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently --kill-others --names web,api --prefix-colors blue,magenta \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "vite",
+    "dev:api": "npm --prefix api start",
     "build": "tsc -b && vite build",
     "build:api": "npm --prefix api run build",
     "lint": "oxlint",
@@ -26,6 +31,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^9.2.4",
     "jsdom": "^29.1.1",
     "oxlint": "^1.71.0",
     "typescript": "~6.0.2",

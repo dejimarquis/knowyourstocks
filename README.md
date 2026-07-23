@@ -12,10 +12,18 @@ Tap any visible metric to learn what it means and why it helps explain the busin
 
 ## Local development
 
+Use Node.js 22 and Azure Functions Core Tools v4:
+
 ```bash
+nvm use
+brew tap azure/functions
+brew install azure-functions-core-tools@4
 npm install
+npm --prefix api install
 npm run dev
 ```
+
+`npm run dev` starts Vite and the local Azure Functions API together. The browser opens on Vite's URL, while `/api/*` is proxied to Functions on port 7071. Running `npm run dev:web` alone does not provide SEC fundamentals.
 
 ## Quality checks
 
