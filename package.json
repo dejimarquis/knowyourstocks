@@ -6,8 +6,10 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:api": "npm --prefix api run build",
     "lint": "oxlint",
     "test": "vitest run",
+    "test:api": "npm --prefix api test",
     "test:e2e": "playwright test",
     "preview": "vite preview"
   },

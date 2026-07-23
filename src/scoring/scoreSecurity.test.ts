@@ -52,4 +52,29 @@ describe('scoreSecurity', () => {
     expect(result.total).toBeNull()
     expect(result.label).toBe('Insufficient data')
   })
+
+  it('scores a newly listed loss-making company when SEC growth data is available', () => {
+    const cbrs: SecuritySnapshot = {
+      ...ibm,
+      symbol: 'CBRS',
+      name: 'Cerebras Systems Inc.',
+      sector: 'Semiconductors',
+      industry: 'Semiconductors',
+      price: 220,
+      marketCap: 58_200_000_000,
+      peRatio: null,
+      eps: -0.88,
+      profitMargin: -0.0724,
+      returnOnEquity: null,
+      revenueGrowth: 0.9435,
+      earningsGrowth: null,
+      beta: null,
+      source: 'Finnhub + SEC EDGAR',
+    }
+
+    const result = scoreSecurity(cbrs, defaultThesis)
+
+    expect(result.total).not.toBeNull()
+    expect(result.label).not.toBe('Insufficient data')
+  })
 })

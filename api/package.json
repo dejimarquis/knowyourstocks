@@ -1,0 +1,21 @@
+{
+  "name": "knowyourstocks-api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/src/{index.js,functions/*.js}",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.0"
+  }
+}

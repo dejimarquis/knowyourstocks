@@ -4,11 +4,12 @@ import {
   type SecuritySnapshot,
 } from '../data/alphaVantage'
 import { fetchFinnhubSecurity } from '../data/finnhub'
+import { enrichWithSecFallback } from '../data/sec'
 import type { InvestmentThesis } from '../domain/thesis'
 import { scoreSecurity } from '../scoring/scoreSecurity'
 
 const apiKeyStorageKey = 'knowyourstocks.finnhubKey'
-const securityCacheKey = 'knowyourstocks.lastSecurity'
+const securityCacheKey = 'knowyourstocks.lastSecurity.v2'
 const demoKey = 'demo'
 const cacheLifetimeMs = 6 * 60 * 60 * 1000
 
@@ -104,6 +105,18 @@ const formatCurrency = (value: number) =>
     minimumFractionDigits: 2,
   }).format(value)
 
+const formatPeRatio = (security: SecuritySnapshot) => {
+  if (security.peRatio != null) {
+    return security.peRatio.toFixed(1)
+  }
+
+  if (security.eps != null && security.eps <= 0) {
+    return 'Not meaningful'
+  }
+
+  return '—'
+}
+
 const formatCompactCurrency = (value: number | null) =>
   value === null
     ? '—'
@@ -172,9 +185,10 @@ export function SecurityLookup({ thesis }: SecurityLookupProps) {
     }
 
     try {
-      const result = personalKey
+      const providerResult = personalKey
         ? await fetchFinnhubSecurity(symbol, personalKey)
         : await fetchAlphaVantageSecurity('IBM', demoKey)
+      const result = await enrichWithSecFallback(providerResult)
 
       setSecurity(result)
       setSymbol(result.symbol)
@@ -315,9 +329,13 @@ export function SecurityLookup({ thesis }: SecurityLookupProps) {
               <details>
                 <summary>
                   <span>{metricDefinitions.peRatio.label}</span>
-                  <strong>{security.peRatio?.toFixed(1) ?? '—'}</strong>
+                  <strong>{formatPeRatio(security)}</strong>
                 </summary>
-                <p>{metricDefinitions.peRatio.definition}</p>
+                <p>
+                  {security.eps != null && security.eps <= 0
+                    ? 'The company currently reports a loss, so a price-to-earnings ratio would not be meaningful.'
+                    : metricDefinitions.peRatio.definition}
+                </p>
               </details>
               <details>
                 <summary>

@@ -48,3 +48,79 @@ test('researches a stock and explains its thesis fit', async ({ page }) => {
   await expect(page.locator('.fit-panel > strong')).toHaveText('93')
   await expect(page.getByText('Source: Alpha Vantage', { exact: false })).toBeVisible()
 })
+
+test('uses SEC filings when Finnhub fundamentals are incomplete', async ({
+  page,
+}) => {
+  await page.route('https://finnhub.io/api/v1/**', async (route) => {
+    const url = new URL(route.request().url())
+
+    if (url.pathname.endsWith('/quote')) {
+      await route.fulfill({
+        json: { c: 220, dp: 4.86, pc: 209.81, t: 1784840400 },
+      })
+      return
+    }
+
+    if (url.pathname.endsWith('/stock/profile2')) {
+      await route.fulfill({
+        json: {
+          exchange: 'NASDAQ NMS - GLOBAL MARKET',
+          finnhubIndustry: 'Semiconductors',
+          marketCapitalization: 58200,
+          name: 'Cerebras Systems Inc.',
+          ticker: 'CBRS',
+        },
+      })
+      return
+    }
+
+    await route.fulfill({
+      json: { metric: { marketCapitalization: 58200 } },
+    })
+  })
+  await page.route('**/api/sec-fundamentals/CBRS', async (route) => {
+    await route.fulfill({
+      json: {
+        symbol: 'CBRS',
+        cik: '0002021728',
+        companyName: 'Cerebras Systems Inc.',
+        filingDate: '2026-06-24',
+        revenue: 193406000,
+        revenueGrowth: 0.9435,
+        netIncome: -14006000,
+        profitMargin: -0.0724,
+        epsAnnualized: -0.88,
+        earningsGrowth: null,
+        stockholdersEquity: -194682000,
+        returnOnEquity: null,
+        source: 'SEC EDGAR',
+      },
+    })
+  })
+
+  await page.goto('/')
+  await page.getByText('Data access').click()
+  await page.getByLabel('Free Finnhub key').fill('personal-key')
+  await page.getByLabel('Ticker symbol').fill('CBRS')
+  await page.getByRole('button', { name: 'Search' }).click()
+
+  await expect(
+    page.getByRole('heading', { name: 'Cerebras Systems Inc.' }),
+  ).toBeVisible()
+  await expect(page.locator('.fit-panel > strong')).not.toHaveText('—')
+  await expect(page.getByText('Not meaningful')).toBeVisible()
+  await expect(
+    page.locator('.metric-grid details').nth(2).getByText('-7.2%', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    page.locator('.metric-grid details').nth(3).getByText('94.4%', {
+      exact: true,
+    }),
+  ).toBeVisible()
+  await expect(
+    page.getByText('Source: Finnhub + SEC EDGAR', { exact: false }),
+  ).toBeVisible()
+})
