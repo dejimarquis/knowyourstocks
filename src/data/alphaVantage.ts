@@ -75,10 +75,11 @@ export type SecuritySnapshot = {
   beta: number | null
   week52High: number | null
   week52Low: number | null
-  source: 'Alpha Vantage'
+  source: string
 }
 
 const apiUrl = 'https://www.alphavantage.co/query'
+const requestSpacingMs = import.meta.env.MODE === 'test' ? 0 : 1100
 
 const parseNumber = (value: string | undefined): number | null => {
   if (!value || value === '-' || value === 'None') {
@@ -111,6 +112,9 @@ const request = async (parameters: Record<string, string>): Promise<unknown> => 
 
   return response.json()
 }
+
+const waitForProviderWindow = () =>
+  new Promise((resolve) => window.setTimeout(resolve, requestSpacingMs))
 
 export const normalizeSymbol = (value: string): string => {
   const symbol = value.trim().toUpperCase()
@@ -171,10 +175,17 @@ export const fetchAlphaVantageSecurity = async (
 
   const symbol = await resolveSymbol(requestedSymbol, key)
 
-  const [quoteValue, overviewValue] = await Promise.all([
-    request({ function: 'GLOBAL_QUOTE', symbol, apikey: key }),
-    request({ function: 'OVERVIEW', symbol, apikey: key }),
-  ])
+  const quoteValue = await request({
+    function: 'GLOBAL_QUOTE',
+    symbol,
+    apikey: key,
+  })
+  await waitForProviderWindow()
+  const overviewValue = await request({
+    function: 'OVERVIEW',
+    symbol,
+    apikey: key,
+  })
 
   const quoteResponse = quoteResponseSchema.parse(quoteValue)
   const overviewResponse = overviewResponseSchema.parse(overviewValue)

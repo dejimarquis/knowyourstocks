@@ -4,28 +4,30 @@ import { defaultThesis } from '../domain/thesis'
 import { SecurityLookup } from './SecurityLookup'
 
 const quoteResponse = {
-  'Global Quote': {
-    '01. symbol': 'IBM',
-    '05. price': '206.5000',
-    '07. latest trading day': '2026-07-23',
-    '08. previous close': '205.7700',
-    '10. change percent': '0.3548%',
-  },
+  c: 206.5,
+  dp: 0.3548,
+  pc: 205.77,
+  t: 1784840400,
 }
 
-const overviewResponse = {
-  Symbol: 'IBM',
-  Name: 'International Business Machines',
-  Exchange: 'NYSE',
-  Sector: 'TECHNOLOGY',
-  Industry: 'INFORMATION TECHNOLOGY SERVICES',
-  MarketCapitalization: '193400209000',
-  TrailingPE: '18.21',
-  ProfitMargin: '0.156',
-  ReturnOnEquityTTM: '0.358',
-  QuarterlyRevenueGrowthYOY: '0.095',
-  QuarterlyEarningsGrowthYOY: '0.142',
-  Beta: '0.675',
+const profileResponse = {
+  exchange: 'NYSE',
+  finnhubIndustry: 'Technology',
+  marketCapitalization: 193400.209,
+  name: 'International Business Machines',
+  ticker: 'IBM',
+}
+
+const metricResponse = {
+  metric: {
+    beta: 0.675,
+    epsTTM: 11.3,
+    marketCapitalization: 193400.209,
+    netProfitMarginTTM: 15.6,
+    peBasicExclExtraTTM: 18.21,
+    revenueGrowthTTMYoy: 9.5,
+    roeTTM: 35.8,
+  },
 }
 
 describe('SecurityLookup', () => {
@@ -48,16 +50,22 @@ describe('SecurityLookup', () => {
           new Response(JSON.stringify(quoteResponse), { status: 200 }),
         )
         .mockResolvedValueOnce(
-          new Response(JSON.stringify(overviewResponse), { status: 200 }),
+          new Response(JSON.stringify(profileResponse), { status: 200 }),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify(metricResponse), { status: 200 }),
         ),
     )
 
     render(<SecurityLookup thesis={defaultThesis} />)
 
     fireEvent.click(screen.getByText('Data access'))
-    fireEvent.change(screen.getByLabelText('Free Alpha Vantage key'), {
+    fireEvent.change(screen.getByLabelText('Free Finnhub key'), {
       target: { value: 'personal-key' },
     })
+    expect(
+      window.sessionStorage.getItem('knowyourstocks.finnhubKey'),
+    ).toBe('personal-key')
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
 
     expect(
@@ -66,10 +74,46 @@ describe('SecurityLookup', () => {
       }),
     ).toBeInTheDocument()
     expect(
-      window.sessionStorage.getItem('knowyourstocks.alphaVantageKey'),
+      window.sessionStorage.getItem('knowyourstocks.finnhubKey'),
     ).toBe('personal-key')
     expect(
-      window.localStorage.getItem('knowyourstocks.alphaVantageKey'),
+      window.localStorage.getItem('knowyourstocks.finnhubKey'),
     ).toBeNull()
+  })
+
+  it('restores the last normalized result without another API request', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(quoteResponse), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(profileResponse), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(metricResponse), { status: 200 }),
+      )
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const firstRender = render(<SecurityLookup thesis={defaultThesis} />)
+    fireEvent.click(screen.getByText('Data access'))
+    fireEvent.change(screen.getByLabelText('Free Finnhub key'), {
+      target: { value: 'personal-key' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+    await screen.findByRole('heading', {
+      name: 'International Business Machines',
+    })
+    firstRender.unmount()
+
+    render(<SecurityLookup thesis={defaultThesis} />)
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'International Business Machines',
+      }),
+    ).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 })

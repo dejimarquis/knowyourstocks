@@ -3,17 +3,59 @@ import {
   fetchAlphaVantageSecurity,
   type SecuritySnapshot,
 } from '../data/alphaVantage'
+import { fetchFinnhubSecurity } from '../data/finnhub'
 import type { InvestmentThesis } from '../domain/thesis'
 import { scoreSecurity } from '../scoring/scoreSecurity'
 
-const apiKeyStorageKey = 'knowyourstocks.alphaVantageKey'
+const apiKeyStorageKey = 'knowyourstocks.finnhubKey'
+const securityCacheKey = 'knowyourstocks.lastSecurity'
 const demoKey = 'demo'
+const cacheLifetimeMs = 6 * 60 * 60 * 1000
 
 type SecurityLookupProps = {
   thesis: InvestmentThesis
 }
 
 const loadApiKey = () => window.sessionStorage.getItem(apiKeyStorageKey) ?? ''
+
+type CachedSecurity = {
+  fetchedAt: number
+  security: SecuritySnapshot
+}
+
+const loadCachedSecurity = (): SecuritySnapshot | null => {
+  const storedValue = window.localStorage.getItem(securityCacheKey)
+
+  if (!storedValue) {
+    return null
+  }
+
+  try {
+    const cached = JSON.parse(storedValue) as CachedSecurity
+
+    if (
+      typeof cached.fetchedAt !== 'number' ||
+      Date.now() - cached.fetchedAt > cacheLifetimeMs ||
+      typeof cached.security?.symbol !== 'string' ||
+      typeof cached.security?.price !== 'number'
+    ) {
+      window.localStorage.removeItem(securityCacheKey)
+      return null
+    }
+
+    return cached.security
+  } catch {
+    window.localStorage.removeItem(securityCacheKey)
+    return null
+  }
+}
+
+const cacheSecurity = (security: SecuritySnapshot) => {
+  window.localStorage.setItem(
+    securityCacheKey,
+    JSON.stringify({ fetchedAt: Date.now(), security } satisfies CachedSecurity),
+  )
+}
 
 const metricDefinitions = {
   marketCap: {
@@ -90,8 +132,11 @@ const formatDate = (value: string) =>
 
 export function SecurityLookup({ thesis }: SecurityLookupProps) {
   const [apiKey, setApiKey] = useState(loadApiKey)
-  const [symbol, setSymbol] = useState('IBM')
-  const [security, setSecurity] = useState<SecuritySnapshot | null>(null)
+  const [initialSecurity] = useState(loadCachedSecurity)
+  const [symbol, setSymbol] = useState(initialSecurity?.symbol ?? 'IBM')
+  const [security, setSecurity] = useState<SecuritySnapshot | null>(
+    initialSecurity,
+  )
   const [status, setStatus] = useState<
     'idle' | 'loading' | 'success' | 'error'
   >('idle')
@@ -116,28 +161,24 @@ export function SecurityLookup({ thesis }: SecurityLookupProps) {
     setStatus('loading')
     setError(null)
 
-    const key = apiKey.trim() || demoKey
+    const personalKey = apiKey.trim()
 
-    if (!key) {
+    if (!personalKey && symbol.trim().toUpperCase() !== 'IBM') {
       setStatus('error')
-      setError('Add your free Alpha Vantage API key before researching a stock.')
-      return
-    }
-
-    if (key === demoKey && symbol.trim().toUpperCase() !== 'IBM') {
-      setStatus('error')
-      setError('The free demo supports IBM only. Open Data access to use another company.')
+      setError(
+        'The free demo supports IBM only. Open Data access to use another company.',
+      )
       return
     }
 
     try {
-      const result = await fetchAlphaVantageSecurity(symbol, key)
-
-      if (apiKey.trim()) {
-        window.sessionStorage.setItem(apiKeyStorageKey, apiKey.trim())
-      }
+      const result = personalKey
+        ? await fetchFinnhubSecurity(symbol, personalKey)
+        : await fetchAlphaVantageSecurity('IBM', demoKey)
 
       setSecurity(result)
+      setSymbol(result.symbol)
+      cacheSecurity(result)
       setStatus('success')
     } catch (caughtError) {
       setSecurity(null)
@@ -147,6 +188,17 @@ export function SecurityLookup({ thesis }: SecurityLookupProps) {
           ? caughtError.message
           : 'Market data could not be loaded.',
       )
+    }
+
+  }
+
+  const handleApiKeyChange = (value: string) => {
+    setApiKey(value)
+
+    if (value.trim()) {
+      window.sessionStorage.setItem(apiKeyStorageKey, value.trim())
+    } else {
+      window.sessionStorage.removeItem(apiKeyStorageKey)
     }
   }
 
@@ -180,19 +232,20 @@ export function SecurityLookup({ thesis }: SecurityLookupProps) {
       <details className="data-access">
         <summary>Data access</summary>
         <label>
-          <span>Free Alpha Vantage key</span>
+          <span>Free Finnhub key</span>
           <input
             autoComplete="off"
-            onChange={(event) => setApiKey(event.target.value)}
-            placeholder="Optional for the IBM demo"
+            onChange={(event) => handleApiKeyChange(event.target.value)}
+            placeholder="Optional for IBM; needed for other stocks"
             type="text"
             value={apiKey}
           />
         </label>
         <p>
-          Kept only for this browser session and never sent to us.{' '}
+          Recommended for personal research. Kept for this browser session and
+          sent directly to Finnhub, never to us.{' '}
           <a
-            href="https://www.alphavantage.co/support/#api-key"
+            href="https://finnhub.io/register"
             rel="noreferrer"
             target="_blank"
           >

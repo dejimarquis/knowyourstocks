@@ -1,0 +1,17 @@
+{
+  "name": "Know Your Stocks",
+  "short_name": "Know Stocks",
+  "description": "Understand a stock through real numbers and a transparent thesis-fit score.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf9f7",
+  "theme_color": "#171715",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

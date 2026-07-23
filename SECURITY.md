@@ -1,11 +1,12 @@
 # Security and privacy
 
-## Alpha Vantage API key
+## Finnhub API key
 
-Know Your Stocks does not receive or store a user's Alpha Vantage key.
+Know Your Stocks does not receive or store a user's Finnhub key.
 
 - The key is kept in the browser's `sessionStorage`.
-- It is sent directly from the browser to Alpha Vantage.
+- It is saved as soon as it is entered, so it survives page refreshes in the same browser session.
+- It is sent directly from the browser to Finnhub.
 - It is normally cleared when the browser session closes, although browser session-restore behavior can preserve a session after a crash or restart.
 - It is never committed to this repository, included in the JavaScript bundle, sent to Azure, or placed in application logs.
 
@@ -13,10 +14,12 @@ Know Your Stocks does not receive or store a user's Alpha Vantage key.
 
 - the app loads no analytics, advertisements, remote scripts, or third-party UI packages;
 - Azure serves a restrictive Content Security Policy;
-- each user supplies a personal free-tier key rather than sharing the owner's key;
+- each user supplies a personal, non-commercial Finnhub key rather than sharing the owner's key;
 - the public IBM demo uses Alpha Vantage's non-secret `demo` key.
 
-If a personal key may have been exposed, replace it through Alpha Vantage and close the affected browser session.
+If a personal key may have been exposed, replace it through Finnhub and close the affected browser session.
+
+Normalized stock results are cached in browser `localStorage` for up to six hours to avoid unnecessary API calls. The cache contains market data, not the API key.
 
 ## Personal investment thesis
 

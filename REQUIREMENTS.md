@@ -222,12 +222,13 @@ If Financial Modeling Prep cannot approve the use within budget, revisit the pro
 
 ### Interim free-data implementation
 
-Development and early personal testing use a bring-your-own-key Alpha Vantage adapter:
+Personal research uses a bring-your-own-key Finnhub adapter:
 
-- each tester obtains a free personal API key;
-- the key stays in session-only browser storage and is sent directly to Alpha Vantage;
-- the free limit is 25 requests per day, so this mode supports on-demand research rather than a full daily universe refresh;
-- local development may use Alpha Vantage's real IBM demo response;
+- each tester obtains a free personal, non-commercial API key;
+- the key stays in session-only browser storage and is sent directly to Finnhub;
+- Finnhub provides the quote, profile, and fundamental metrics needed for the fit score with a much more usable personal rate limit;
+- successful normalized results are cached locally for six hours;
+- Alpha Vantage remains only for the real IBM demo and its two calls are spaced by more than one second;
 - no owner-owned key is embedded or shared with site visitors;
 - Yahoo Finance is not used because it has no official supported API, its public-use terms are unsuitable, and its endpoints are prone to blocking;
 - Azure provides hosting and compute but no first-party stock-market feed.
