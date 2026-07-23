@@ -1,0 +1,85 @@
+:root {
+  --ink-950: oklch(0.19 0.008 80);
+  --ink-800: oklch(0.31 0.008 80);
+  --ink-500: oklch(0.51 0.008 80);
+  --paper: oklch(0.982 0.003 85);
+  --white: oklch(1 0 0);
+  --line: oklch(0.86 0.006 85);
+  --line-strong: oklch(0.65 0.008 85);
+  --ultramarine: oklch(0.49 0.22 274);
+  --ultramarine-dark: oklch(0.42 0.2 274);
+  --ultramarine-soft: oklch(0.95 0.025 274);
+  --gain: oklch(0.46 0.13 151);
+  --loss: oklch(0.53 0.19 27);
+
+  --background: var(--paper);
+  --foreground: var(--ink-950);
+  --card: var(--white);
+  --card-foreground: var(--ink-950);
+  --primary: var(--ink-950);
+  --primary-hover: var(--ink-800);
+  --primary-foreground: var(--white);
+  --primary-subtle: var(--ultramarine-soft);
+  --secondary: oklch(0.97 0.003 85);
+  --secondary-foreground: var(--ink-950);
+  --muted-foreground: var(--ink-500);
+  --fit: var(--ultramarine);
+  --fit-hover: var(--ultramarine-dark);
+  --accent: var(--ultramarine);
+  --accent-text: var(--ultramarine-dark);
+  --info-surface: var(--ultramarine-soft);
+  --success: var(--gain);
+  --warning-text: oklch(0.47 0.11 61);
+  --destructive: var(--loss);
+  --border: var(--line);
+  --input: var(--line-strong);
+  --placeholder: var(--ink-500);
+  --disabled-foreground: oklch(0.64 0.006 85);
+  --link: var(--ultramarine-dark);
+  --shadow-soft:
+    0 2px 5px oklch(0.2 0 0 / 0.025),
+    0 14px 36px oklch(0.2 0 0 / 0.04);
+
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 8px;
+  --font-sans:
+    ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  color: var(--foreground);
+  background: var(--background);
+  color-scheme: light;
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--background);
+}
+
+button,
+select,
+textarea,
+input {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--ultramarine);
+  color: var(--white);
+}
