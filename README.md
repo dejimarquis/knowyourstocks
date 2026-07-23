@@ -27,7 +27,7 @@ npm run build
 
 See `REQUIREMENTS.md` for the product and technical specification and `DESIGN_SYSTEM.md` for interface rules.
 
-The friend beta uses Finnhub for personal-key research and Alpha Vantage only for the public IBM demo. Results are cached locally for six hours to reduce API use. A future shared recommendation universe still requires a market-data display license; `REQUIREMENTS.md` records that provider gate.
+The friend beta uses Finnhub for personal-key research and Alpha Vantage only for the public IBM demo. When Finnhub lacks fundamentals, a same-origin Azure API derives the missing figures from official SEC EDGAR filings. Results are cached locally for six hours to reduce API use. A future shared recommendation universe still requires a market-data display license; `REQUIREMENTS.md` records that provider gate.
 
 Visible financial metrics can be expanded for plain-language definitions and an explanation of why each measure matters. See `SECURITY.md` for the exact browser-storage and API-key security model.
 

@@ -229,6 +229,7 @@ Personal research uses a bring-your-own-key Finnhub adapter:
 - Finnhub provides the quote, profile, and fundamental metrics needed for the fit score with a much more usable personal rate limit;
 - successful normalized results are cached locally for six hours;
 - Alpha Vantage remains only for the real IBM demo and its two calls are spaced by more than one second;
+- missing fundamental metrics are derived from official SEC EDGAR company facts through a same-origin managed API;
 - no owner-owned key is embedded or shared with site visitors;
 - Yahoo Finance is not used because it has no official supported API, its public-use terms are unsuitable, and its endpoints are prone to blocking;
 - Azure provides hosting and compute but no first-party stock-market feed.

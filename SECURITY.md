@@ -21,6 +21,8 @@ If a personal key may have been exposed, replace it through Finnhub and close th
 
 Normalized stock results are cached in browser `localStorage` for up to six hours to avoid unnecessary API calls. The cache contains market data, not the API key.
 
+The same-origin SEC fallback receives only a public ticker symbol. It does not receive the user's Finnhub key, thesis, watchlist, or other personal data.
+
 ## Personal investment thesis
 
 The thesis is stored in browser `localStorage` so it survives reloads. It is not sent to Azure, Alpha Vantage, or an AI service. Other browser profiles cannot normally access it, but anyone with access to the same unlocked browser profile or device may be able to view it.
