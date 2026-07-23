@@ -6,7 +6,7 @@ Know Your Stocks does not receive or store a user's Alpha Vantage key.
 
 - The key is kept in the browser's `sessionStorage`.
 - It is sent directly from the browser to Alpha Vantage.
-- It is normally cleared when the browser session closes.
+- It is normally cleared when the browser session closes, although browser session-restore behavior can preserve a session after a crash or restart.
 - It is never committed to this repository, included in the JavaScript bundle, sent to Azure, or placed in application logs.
 
 `sessionStorage` reduces persistence but is not an encrypted secret vault. JavaScript running on this site's origin, a browser extension with page access, or malware on the device could potentially read it. To reduce that risk:
