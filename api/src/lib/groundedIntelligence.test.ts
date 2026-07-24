@@ -126,11 +126,26 @@ describe('callGroundedModel', () => {
   })
 
   it('surfaces invalid model JSON for deterministic fallback handling', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response('not json')))
+    const fetchMock = vi.fn().mockResolvedValue(response('not json'))
+    vi.stubGlobal('fetch', fetchMock)
 
     await expect(
       callGroundedModel(options('research', { invalid: 1 })),
     ).rejects.toThrow('invalid JSON')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('regenerates once after invalid model output', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response('not json'))
+      .mockResolvedValueOnce(response('{"result":"recovered"}'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      callGroundedModel(options('research', { regenerate: 1 })),
+    ).resolves.toEqual({ result: 'recovered' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
   it('enforces the per-process client daily limit', async () => {

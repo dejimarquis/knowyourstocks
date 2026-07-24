@@ -416,37 +416,64 @@ export const callGroundedModel = async <T>(
   rateLimit(options.clientId)
 
   const url = `${settings.endpoint.replace(/\/$/, '')}/openai/deployments/${encodeURIComponent(settings.deployment)}/chat/completions?api-version=2024-10-21`
-  const response = await fetchFoundry(
-    url,
-    settings.key,
-    {
-      messages: [
-        {
-          role: 'system',
-          content: `${options.systemPrompt} Return concise JSON only. Never reveal chain-of-thought.`,
-        },
-        { role: 'user', content: options.userPrompt },
-      ],
-      temperature: 0,
-      max_tokens: options.maxTokens,
-      response_format: { type: 'json_object' },
-    },
-    settings.timeoutMs,
-  )
-  const body = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-  const content = body.choices?.[0]?.message?.content
-  if (!content) {
-    throw new Error('Foundry returned no intelligence output.')
+  let lastOutputError: unknown
+
+  for (let outputAttempt = 0; outputAttempt < 2; outputAttempt += 1) {
+    const response = await fetchFoundry(
+      url,
+      settings.key,
+      {
+        messages: [
+          {
+            role: 'system',
+            content: `${options.systemPrompt} Return concise JSON only. Never reveal chain-of-thought.`,
+          },
+          { role: 'user', content: options.userPrompt },
+        ],
+        temperature: 0,
+        max_tokens: options.maxTokens,
+        response_format: { type: 'json_object' },
+      },
+      settings.timeoutMs,
+    )
+    let body: {
+      choices?: Array<{ message?: { content?: string } }>
+    }
+    try {
+      body = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>
+      }
+    } catch (error) {
+      if (lastOutputError) {
+        throw lastOutputError
+      }
+      throw error
+    }
+    const content = body.choices?.[0]?.message?.content
+
+    try {
+      if (!content) {
+        throw new Error('Foundry returned no intelligence output.')
+      }
+      const normalized = options.normalize(parseModelJson(content))
+      responseCache.set(requestHash, {
+        expiresAt: Date.now() + cacheLifetimeMs,
+        value: normalized,
+      })
+      return normalized
+    } catch (error) {
+      lastOutputError = error
+      if (outputAttempt === 0) {
+        await wait(100)
+        continue
+      }
+      throw error
+    }
   }
 
-  const normalized = options.normalize(parseModelJson(content))
-  responseCache.set(requestHash, {
-    expiresAt: Date.now() + cacheLifetimeMs,
-    value: normalized,
-  })
-  return normalized
+  throw lastOutputError instanceof Error
+    ? lastOutputError
+    : new Error('Foundry returned invalid intelligence output.')
 }
 
 export const intelligenceErrorStatus = (error: unknown) => {
