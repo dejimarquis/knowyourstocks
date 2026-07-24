@@ -194,4 +194,28 @@ describe('generateResearchIntelligence', () => {
       'profitability',
     )
   })
+
+  it('normalizes singular strength and risk keys from Phi', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        modelResponse({
+          score: 45,
+          opinion: 'Watch closely',
+          strength: [1],
+          risk: [2],
+          confidence: 0.75,
+        }),
+      ),
+    )
+
+    const output = await generateResearchIntelligence(
+      request,
+      'research-singular-keys',
+    )
+
+    expect(output.strengths[0].evidenceId).toBe('quality')
+    expect(output.risks[0].evidenceId).toBe('valuation')
+    expect(output.confidence).toBe('medium')
+  })
 })

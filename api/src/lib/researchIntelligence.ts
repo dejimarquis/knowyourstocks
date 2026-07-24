@@ -83,32 +83,30 @@ const normalizeResearchOutput = (
     pick(record, ['opinion', 'Opinion']),
     score,
   )
-  const summary = pick(record, ['summary', 'Summary', 'assessment'])
+  const rawSummary = pick(record, ['summary', 'Summary', 'assessment'])
   let strengths = catalog.resolveIds(
     pick(record, [
       'strengthEvidenceIds',
       'StrengthEvidenceIds',
       'strength_evidence_ids',
       'strengths',
+      'strength',
     ]),
-    { min: 1, max: 3 },
-  )
+    { max: 24 },
+  ).slice(0, 3)
   let risks = catalog.resolveIds(
     pick(record, [
       'riskEvidenceIds',
       'RiskEvidenceIds',
       'risk_evidence_ids',
       'risks',
+      'risk',
     ]),
-    { min: 1, max: 3 },
-  )
+    { max: 24 },
+  ).slice(0, 3)
   const confidence = normalizeConfidence(
     pick(record, ['confidence', 'Confidence']),
   )
-
-  if (typeof summary !== 'string' || summary.trim() === '') {
-    throw new Error('Model returned an invalid research summary.')
-  }
 
   const symbol = request.symbol.toUpperCase()
   if (
@@ -144,13 +142,23 @@ const normalizeResearchOutput = (
   strengths = strengths.slice(0, 3)
   risks = risks.slice(0, 3)
 
+  const summary =
+    typeof rawSummary === 'string' && rawSummary.trim()
+      ? rawSummary.trim()
+      : `${
+          strengths[0]?.text ??
+          'The available evidence provides limited support for the thesis.'
+        }${
+          risks[0]?.text ? ` Main concern: ${risks[0].text}` : ''
+        }`
+
   assertNoProhibitedAdvice([summary])
   assertNoInventedNumericClaims(summary, [...strengths, ...risks])
 
   return researchIntelligenceResponseSchema.parse({
     score,
     opinion,
-    summary: summary.trim().slice(0, 300),
+    summary: summary.slice(0, 300),
     strengths: strengths.map((item) => ({
       evidenceId: item.id,
       text: item.text,
@@ -172,9 +180,10 @@ export const generateResearchIntelligence = async (
     operation: 'research',
     request,
     clientId,
-    maxTokens: 360,
-    attemptTimeoutMs: 10_000,
+    maxTokens: 240,
+    attemptTimeoutMs: 14_000,
     regenerateInvalidOutput: true,
+    retryTransient: false,
     systemPrompt:
       'Assess how strongly supplied evidence supports the supplied thesis. The score is not a return forecast. Use only supplied evidence aliases and supported opinion labels. Do not give trade instructions or add numeric claims to narratives.',
     userPrompt: `Symbol: ${request.symbol}
@@ -183,7 +192,7 @@ Classification: ${request.company.sector ?? 'unknown'} / ${request.company.indus
 Thesis: ${request.thesis.style}; ${request.thesis.horizon}; ${request.thesis.risk}; sectors ${request.thesis.sectors.join(', ')}
 ${request.thesis.note ? `Optional thesis note: ${request.thesis.note}\n` : ''}${request.deterministicFit ? `Deterministic fit context: ${request.deterministicFit.total ?? 'unavailable'} (${request.deterministicFit.label})\n` : ''}Evidence:
 ${catalog.lines.join('\n')}
-Return keys score, opinion, summary, strengthEvidenceIds, riskEvidenceIds, confidence. Score may be 0-100. Opinion must be Compelling, Promising but mixed, Watch closely, or Reconsider. Select one to three strength IDs and one to three risk or missing-data IDs. Do not copy numbers into summary.`,
+Return keys score, opinion, strengthEvidenceIds, riskEvidenceIds, confidence. Score must be 0-100. Opinion must be Compelling, Promising but mixed, Watch closely, or Reconsider. Select up to three strength IDs and up to three risk or missing-data IDs. Keep JSON compact; the server writes the user-facing summary.`,
     normalize: (value) => normalizeResearchOutput(value, request),
   })
 }

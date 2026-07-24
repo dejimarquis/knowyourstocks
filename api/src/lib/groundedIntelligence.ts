@@ -119,10 +119,11 @@ const fetchFoundry = async (
   key: string,
   body: Record<string, unknown>,
   timeoutMs: number,
+  maxAttempts = 2,
 ) => {
   let lastError: unknown
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       const response = await fetch(url, {
         method: 'POST',
@@ -139,7 +140,7 @@ const fetchFoundry = async (
       }
 
       lastError = new Error(`Foundry returned HTTP ${response.status}.`)
-      if (attempt === 0 && transientStatus(response.status)) {
+      if (attempt < maxAttempts - 1 && transientStatus(response.status)) {
         await wait(parseRetryAfterMs(response))
         continue
       }
@@ -149,7 +150,7 @@ const fetchFoundry = async (
       const isTimeout =
         error instanceof Error &&
         (error.name === 'TimeoutError' || error.name === 'AbortError')
-      if (attempt === 0 && isTimeout) {
+      if (attempt < maxAttempts - 1 && isTimeout) {
         continue
       }
       throw error
@@ -404,6 +405,7 @@ type ModelCallOptions<T> = {
   maxTokens: number
   attemptTimeoutMs?: number
   regenerateInvalidOutput?: boolean
+  retryTransient?: boolean
   normalize: (value: unknown) => T
 }
 
@@ -461,6 +463,7 @@ export const callGroundedModel = async <T>(
         response_format: { type: 'json_object' },
       },
       attemptTimeoutMs,
+      options.retryTransient === false ? 1 : 2,
     )
     let body: {
       choices?: Array<{ message?: { content?: string } }>
