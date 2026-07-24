@@ -69,7 +69,7 @@ describe('research intelligence client', () => {
     )
 
     expect(request.thesis).not.toHaveProperty('note')
-    expect(request.evidence.length).toBeLessThanOrEqual(24)
+    expect(request.evidence.length).toBeLessThanOrEqual(12)
     expect(request.evidence).toContainEqual(
       expect.objectContaining({
         id: 'metric:earningsGrowth',
@@ -79,9 +79,7 @@ describe('research intelligence client', () => {
     expect(request.evidence).toContainEqual(
       expect.objectContaining({ id: 'fit:valuation' }),
     )
-    expect(request.company.snapshot.metricProvenance).toEqual(
-      security.metricProvenance,
-    )
+    expect(request.company.snapshot).toBeUndefined()
   })
 
   it('validates and caches a response for six hours by symbol, thesis, and evidence', async () => {

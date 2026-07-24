@@ -50,7 +50,7 @@ export type ResearchIntelligenceRequest = {
     name: string
     sector?: string | null
     industry?: string | null
-    snapshot: {
+    snapshot?: {
       earningsGrowth?: number | null
       operatingMargin?: number | null
       freeCashFlow?: number | null
@@ -112,6 +112,17 @@ const metricDefinitions: Array<{
   { key: 'week52Low', label: '52-week low', format: formatCurrency },
 ]
 
+const researchMetricKeys = new Set<keyof SecuritySnapshot>([
+  'peRatio',
+  'profitMargin',
+  'revenueGrowth',
+  'earningsGrowth',
+  'operatingMargin',
+  'freeCashFlow',
+  'debtToEquity',
+  'currentRatio',
+])
+
 const provenanceText = (
   security: SecuritySnapshot,
   key: keyof SecuritySnapshot,
@@ -129,21 +140,28 @@ export const createResearchIntelligenceRequest = (
   fit: FitScore,
   thesis: InvestmentThesis,
 ): ResearchIntelligenceRequest => {
-  const metricEvidence = metricDefinitions.flatMap(({ key, label, format }) => {
-    const value = security[key]
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      return []
-    }
+  const metricEvidence = metricDefinitions
+    .filter(({ key }) => researchMetricKeys.has(key))
+    .flatMap(({ key, label, format }) => {
+      const value = security[key]
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return []
+      }
 
-    return [
-      {
-        id: `metric:${String(key)}`,
-        symbol: security.symbol,
-        text: `${label}: ${format(value)}. ${provenanceText(security, key)}`,
-      },
-    ]
+      return [
+        {
+          id: `metric:${String(key)}`,
+          symbol: security.symbol,
+          text: `${label}: ${format(value)}. ${provenanceText(security, key)}`,
+        },
+      ]
+    })
+  const selectedFactorKeys = ['quality', 'growth', 'valuation', 'risk']
+  const selectedFactors = selectedFactorKeys.flatMap((key) => {
+    const factor = fit.factors.find((candidate) => candidate.key === key)
+    return factor ? [factor] : []
   })
-  const fitEvidence = fit.factors.map((factor) => ({
+  const fitEvidence = selectedFactors.map((factor) => ({
     id: `fit:${factor.key}`,
     symbol: security.symbol,
     text: `Deterministic Fit factor "${factor.label}" ${
@@ -160,14 +178,6 @@ export const createResearchIntelligenceRequest = (
       name: security.name,
       sector: security.sector,
       industry: security.industry,
-      snapshot: {
-        earningsGrowth: security.earningsGrowth,
-        operatingMargin: security.operatingMargin,
-        freeCashFlow: security.freeCashFlow,
-        debtToEquity: security.debtToEquity,
-        currentRatio: security.currentRatio,
-        metricProvenance: security.metricProvenance ?? {},
-      },
     },
     thesis: {
       sectors: thesis.sectors,
@@ -179,7 +189,7 @@ export const createResearchIntelligenceRequest = (
       total: fit.total,
       label: fit.label,
     },
-    evidence: [...metricEvidence, ...fitEvidence].slice(0, 24),
+    evidence: [...metricEvidence, ...fitEvidence].slice(0, 12),
   }
 }
 
