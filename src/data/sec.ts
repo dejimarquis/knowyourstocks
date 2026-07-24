@@ -20,11 +20,11 @@ const secFundamentalsSchema = z.object({
 type SecFundamentals = z.infer<typeof secFundamentalsSchema>
 
 const needsSecFallback = (security: SecuritySnapshot) =>
-  security.peRatio == null ||
   security.profitMargin == null ||
   security.revenueGrowth == null ||
   security.eps == null ||
-  security.returnOnEquity == null
+  security.returnOnEquity == null ||
+  security.earningsGrowth == null
 
 export const fetchSecFallback = async (
   symbol: string,
@@ -58,7 +58,30 @@ export const enrichWithSecFallback = async (
       security.revenueGrowth == null && sec.revenueGrowth != null,
       security.eps == null && eps != null,
       security.returnOnEquity == null && sec.returnOnEquity != null,
+      security.earningsGrowth == null && sec.earningsGrowth != null,
     ].some(Boolean)
+    const metricProvenance = { ...security.metricProvenance }
+    const secValues = {
+      profitMargin:
+        security.profitMargin == null ? sec.profitMargin : null,
+      revenueGrowth:
+        security.revenueGrowth == null ? sec.revenueGrowth : null,
+      eps: security.eps == null ? eps : null,
+      returnOnEquity:
+        security.returnOnEquity == null ? sec.returnOnEquity : null,
+      earningsGrowth:
+        security.earningsGrowth == null ? sec.earningsGrowth : null,
+    }
+
+    Object.entries(secValues).forEach(([key, value]) => {
+      if (value != null) {
+        metricProvenance[key] = {
+          source: 'SEC EDGAR',
+          asOf: sec.filingDate,
+          period: 'latest-comparable-filing',
+        }
+      }
+    })
 
     return {
       ...security,
@@ -68,7 +91,10 @@ export const enrichWithSecFallback = async (
       returnOnEquity: security.returnOnEquity ?? sec.returnOnEquity,
       revenueGrowth: security.revenueGrowth ?? sec.revenueGrowth,
       earningsGrowth: security.earningsGrowth ?? sec.earningsGrowth,
-      fundamentalsAsOf: sec.filingDate,
+      fundamentalsAsOf: usedSec
+        ? sec.filingDate
+        : security.fundamentalsAsOf,
+      metricProvenance,
       source: usedSec ? `${security.source} + SEC EDGAR` : security.source,
     }
   } catch {

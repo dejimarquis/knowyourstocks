@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   fetchAlphaVantageSecurity,
   type SecuritySnapshot,
@@ -7,6 +7,12 @@ import { fetchFinnhubSecurity } from '../data/finnhub'
 import { enrichWithSecFallback } from '../data/sec'
 import type { InvestmentThesis } from '../domain/thesis'
 import { scoreSecurity, type FitScore } from '../scoring/scoreSecurity'
+import {
+  createResearchIntelligenceRequest,
+  requestResearchIntelligence,
+  researchIntelligenceCacheKey,
+  type ResearchIntelligenceResult,
+} from '../research/requestResearchIntelligence'
 import {
   loadFinnhubKey,
   saveFinnhubKey,
@@ -20,12 +26,20 @@ type SecurityLookupProps = {
   thesis: InvestmentThesis
   watchedSymbols: Set<string>
   watchlistLocked: boolean
+  requestedSymbol?: string | null
+  onSecurityResearched?: (security: SecuritySnapshot) => void
   onToggleWatch: (security: SecuritySnapshot, fit: FitScore) => void
 }
 
 type CachedSecurity = {
   fetchedAt: number
   security: SecuritySnapshot
+}
+
+type IntelligenceState = {
+  key: string
+  status: 'loading' | 'success' | 'unavailable'
+  result?: ResearchIntelligenceResult
 }
 
 const loadCachedSecurity = (): SecuritySnapshot | null => {
@@ -147,10 +161,18 @@ const formatDate = (value: string) =>
     timeZone: 'UTC',
   }).format(new Date(`${value}T00:00:00Z`))
 
+const formatTimestamp = (value: number) =>
+  new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
+
 export function SecurityLookup({
   thesis,
   watchedSymbols,
   watchlistLocked,
+  requestedSymbol = null,
+  onSecurityResearched,
   onToggleWatch,
 }: SecurityLookupProps) {
   const [apiKey, setApiKey] = useState(loadFinnhubKey)
@@ -164,6 +186,17 @@ export function SecurityLookup({
   >('idle')
   const [error, setError] = useState<string | null>(null)
   const [dataAccessOpen, setDataAccessOpen] = useState(false)
+  const [intelligence, setIntelligence] =
+    useState<IntelligenceState | null>(null)
+  const [intelligenceInput, setIntelligenceInput] = useState<{
+    security: SecuritySnapshot
+    fit: FitScore
+    thesis: InvestmentThesis
+  } | null>(null)
+  const intelligenceController = useRef<AbortController | null>(null)
+  const intelligenceGeneration = useRef(0)
+  const lastExternalResearch = useRef<string | null>(null)
+  const hydrationReported = useRef(false)
 
   const fit = useMemo(
     () => (security ? scoreSecurity(security, thesis) : null),
@@ -179,15 +212,79 @@ export function SecurityLookup({
   const isRefreshing =
     security?.symbol === symbol.trim().toUpperCase() && status !== 'loading'
   const isWatched = security ? watchedSymbols.has(security.symbol) : false
+  const intelligenceRequest = useMemo(
+    () =>
+      intelligenceInput
+        ? createResearchIntelligenceRequest(
+            intelligenceInput.security,
+            intelligenceInput.fit,
+            intelligenceInput.thesis,
+          )
+        : null,
+    [intelligenceInput],
+  )
+  const intelligenceKey = intelligenceRequest
+    ? researchIntelligenceCacheKey(intelligenceRequest)
+    : null
+  const currentIntelligence =
+    intelligence?.key === intelligenceKey ? intelligence : null
 
-  const handleResearch = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  useEffect(() => {
+    if (!intelligenceRequest || !intelligenceKey) {
+      return
+    }
+
+    const controller = new AbortController()
+    const generation = ++intelligenceGeneration.current
+    intelligenceController.current = controller
+    setIntelligence({ key: intelligenceKey, status: 'loading' })
+
+    void requestResearchIntelligence(intelligenceRequest, controller.signal)
+      .then((result) => {
+        if (
+          !controller.signal.aborted &&
+          intelligenceGeneration.current === generation
+        ) {
+          setIntelligence({ key: intelligenceKey, status: 'success', result })
+        }
+      })
+      .catch(() => {
+        if (
+          !controller.signal.aborted &&
+          intelligenceGeneration.current === generation
+        ) {
+          setIntelligence({ key: intelligenceKey, status: 'unavailable' })
+        }
+      })
+
+    return () => {
+      controller.abort()
+    }
+  }, [intelligenceKey, intelligenceRequest])
+
+  useEffect(() => {
+    if (
+      initialSecurity &&
+      !hydrationReported.current &&
+      onSecurityResearched
+    ) {
+      hydrationReported.current = true
+      onSecurityResearched(initialSecurity)
+    }
+  }, [initialSecurity, onSecurityResearched])
+
+  const runResearch = useCallback(async (requestedValue: string) => {
+    const normalizedRequest = requestedValue.trim().toUpperCase()
+    intelligenceGeneration.current += 1
+    intelligenceController.current?.abort()
+    setIntelligence(null)
+    setIntelligenceInput(null)
     setStatus('loading')
     setError(null)
 
     const personalKey = apiKey.trim()
 
-    if (!personalKey && symbol.trim().toUpperCase() !== 'IBM') {
+    if (!personalKey && normalizedRequest !== 'IBM') {
       setStatus('error')
       setDataAccessOpen(true)
       setError(
@@ -198,13 +295,20 @@ export function SecurityLookup({
 
     try {
       const providerResult = personalKey
-        ? await fetchFinnhubSecurity(symbol, personalKey)
+        ? await fetchFinnhubSecurity(normalizedRequest, personalKey)
         : await fetchAlphaVantageSecurity('IBM', demoKey)
       const result = await enrichWithSecFallback(providerResult)
 
       setSecurity(result)
       setSymbol(result.symbol)
       cacheSecurity(result)
+      const researchedFit = scoreSecurity(result, thesis)
+      setIntelligenceInput({
+        security: result,
+        fit: researchedFit,
+        thesis,
+      })
+      onSecurityResearched?.(result)
       setStatus('success')
     } catch (caughtError) {
       setSecurity(null)
@@ -216,6 +320,27 @@ export function SecurityLookup({
       )
     }
 
+  }, [apiKey, onSecurityResearched, thesis])
+
+  useEffect(() => {
+    if (!requestedSymbol) {
+      lastExternalResearch.current = null
+      return
+    }
+
+    const normalized = requestedSymbol.trim().toUpperCase()
+    if (!normalized || lastExternalResearch.current === normalized) {
+      return
+    }
+
+    lastExternalResearch.current = normalized
+    setSymbol(normalized)
+    void runResearch(normalized)
+  }, [requestedSymbol, runResearch])
+
+  const handleResearch = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    await runResearch(symbol)
   }
 
   const handleApiKeyChange = (value: string) => {
@@ -389,6 +514,104 @@ export function SecurityLookup({
                 ))}
               </ol>
             </details>
+
+            <section
+              className="research-intelligence"
+              aria-labelledby="research-intelligence-title"
+            >
+              <div className="research-intelligence-heading">
+                <div>
+                  <span>Grounded AI assessment</span>
+                  <h4 id="research-intelligence-title">
+                    Thesis-evidence review
+                  </h4>
+                </div>
+                <p>
+                  Separate from deterministic Fit. It reviews the supplied
+                  evidence against your structured thesis; neither score predicts
+                  returns.
+                </p>
+              </div>
+
+              {!intelligenceInput ? (
+                <div className="research-intelligence-status">
+                  <strong>AI assessment not requested</strong>
+                  <span>
+                    Search or refresh this company to request a grounded AI
+                    thesis-evidence review.
+                  </span>
+                </div>
+              ) : !currentIntelligence ||
+                currentIntelligence.status === 'loading' ? (
+                <div className="research-intelligence-status" role="status">
+                  <strong>Assessing the grounded evidence…</strong>
+                  <span>
+                    Your deterministic market data and Fit remain available.
+                  </span>
+                </div>
+              ) : currentIntelligence.status === 'unavailable' ? (
+                <div className="research-intelligence-status" role="status">
+                  <strong>AI assessment unavailable</strong>
+                  <span>
+                    No AI score is shown. The deterministic result above remains
+                    unchanged.
+                  </span>
+                </div>
+              ) : currentIntelligence.result ? (
+                <>
+                  <div className="research-intelligence-summary">
+                    <div className="ai-score">
+                      <span>AI thesis-evidence score</span>
+                      <strong
+                        aria-label={`${currentIntelligence.result.score} out of 100`}
+                      >
+                        {currentIntelligence.result.score}
+                      </strong>
+                    </div>
+                    <div>
+                      <div className="ai-opinion-line">
+                        <strong>{currentIntelligence.result.opinion}</strong>
+                        <span>
+                          {currentIntelligence.result.confidence} confidence
+                        </span>
+                      </div>
+                      <p>{currentIntelligence.result.summary}</p>
+                    </div>
+                  </div>
+                  <div className="research-evidence-columns">
+                    <div>
+                      <h5>Strengths</h5>
+                      <ul>
+                        {currentIntelligence.result.strengths.map((strength) => (
+                          <li key={strength.evidenceId}>{strength.text}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <h5>Risks and gaps</h5>
+                      <ul>
+                        {currentIntelligence.result.risks.map((risk) => (
+                          <li key={risk.evidenceId}>{risk.text}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                  <p className="research-intelligence-disclosure">
+                    Model: Azure AI Foundry grounded assessment · Freshness:{' '}
+                    <time
+                      dateTime={new Date(
+                        currentIntelligence.result.fetchedAt,
+                      ).toISOString()}
+                    >
+                      {formatTimestamp(currentIntelligence.result.fetchedAt)}
+                    </time>
+                    {currentIntelligence.result.source === 'cache'
+                      ? ' · Loaded from the six-hour local cache'
+                      : ' · Cached locally for up to six hours'}
+                  </p>
+                </>
+              ) : null}
+            </section>
 
             <div className="result-actions">
               <button

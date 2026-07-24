@@ -20,13 +20,26 @@ export const loadWatchlist = (): LoadWatchlistResult => {
     return { watchlist: emptyWatchlist, recoveryRequired: false }
   }
 
+  let watchlist: Watchlist
+
   try {
-    return {
-      watchlist: watchlistSchema.parse(JSON.parse(storedValue)),
-      recoveryRequired: false,
-    }
+    watchlist = watchlistSchema.parse(JSON.parse(storedValue))
   } catch {
     return { watchlist: emptyWatchlist, recoveryRequired: true }
+  }
+
+  const migratedValue = JSON.stringify(watchlist)
+  if (migratedValue !== storedValue) {
+    try {
+      window.localStorage.setItem(storageKey, migratedValue)
+    } catch {
+      // A valid watchlist remains usable even if migration persistence fails.
+    }
+  }
+
+  return {
+    watchlist,
+    recoveryRequired: false,
   }
 }
 

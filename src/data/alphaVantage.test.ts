@@ -22,6 +22,7 @@ const overviewResponse = {
   DividendYield: '0.0319',
   EPS: '11.3',
   ProfitMargin: '0.156',
+  OperatingMarginTTM: '0.184',
   ReturnOnEquityTTM: '0.358',
   QuarterlyRevenueGrowthYOY: '0.095',
   QuarterlyEarningsGrowthYOY: '0.142',
@@ -51,6 +52,10 @@ describe('fetchAlphaVantageSecurity', () => {
     expect(security.price).toBe(206.5)
     expect(security.marketCap).toBe(193400209000)
     expect(security.source).toBe('Alpha Vantage')
+    expect(security.operatingMargin).toBe(0.184)
+    expect(security.metricProvenance?.earningsGrowth?.source).toBe(
+      'Alpha Vantage',
+    )
   })
 
   it('surfaces provider rate-limit messages', async () => {

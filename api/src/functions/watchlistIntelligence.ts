@@ -8,6 +8,7 @@ import {
   generateWatchlistIntelligence,
   parseIntelligenceRequest,
 } from '../lib/watchlistIntelligence'
+import { intelligenceErrorStatus } from '../lib/groundedIntelligence'
 
 const handler = async (
   request: HttpRequest,
@@ -16,7 +17,9 @@ const handler = async (
   try {
     const body = parseIntelligenceRequest(await request.json())
     const clientId =
-      request.headers.get('x-watchlist-client') ?? 'anonymous-browser'
+      request.headers.get('x-intelligence-client') ??
+      request.headers.get('x-watchlist-client') ??
+      'anonymous-browser'
     const intelligence = await generateWatchlistIntelligence(body, clientId)
 
     context.log('Generated watchlist intelligence.')
@@ -30,8 +33,7 @@ const handler = async (
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Watchlist intelligence failed.'
-    const status =
-      message.includes('limit') || message.includes('budget') ? 429 : 503
+    const status = intelligenceErrorStatus(error)
     context.error(`Watchlist intelligence failed: ${message}`)
     return {
       status,

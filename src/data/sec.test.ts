@@ -64,6 +64,11 @@ describe('enrichWithSecFallback', () => {
     expect(enriched.eps).toBe(-0.88)
     expect(enriched.peRatio).toBeNull()
     expect(enriched.fundamentalsAsOf).toBe('2026-06-24')
+    expect(enriched.metricProvenance?.revenueGrowth).toEqual({
+      source: 'SEC EDGAR',
+      asOf: '2026-06-24',
+      period: 'latest-comparable-filing',
+    })
     expect(enriched.source).toBe('Finnhub + SEC EDGAR')
   })
 })

@@ -170,7 +170,7 @@ const growthFactor = (security: SecuritySnapshot): FitFactor => {
       growthPoints(security.revenueGrowth) +
       growthPoints(security.earningsGrowth),
     maximum: 15,
-    evidence: `Quarterly revenue growth is ${formatPercent(security.revenueGrowth)} and earnings growth is ${formatPercent(security.earningsGrowth)}.`,
+    evidence: `Trailing-twelve-month revenue growth is ${formatPercent(security.revenueGrowth)} and earnings growth is ${formatPercent(security.earningsGrowth)}.`,
     available: true,
   }
 }
@@ -259,7 +259,7 @@ const preferenceFactor = (
     evidence = `Dividend yield is ${formatPercent(security.dividendYield)}.`
   } else if (thesis.style === 'growth' && security.revenueGrowth !== null) {
     matched = security.revenueGrowth >= 0.1
-    evidence = `Quarterly revenue growth is ${formatPercent(security.revenueGrowth)}.`
+    evidence = `Trailing-twelve-month revenue growth is ${formatPercent(security.revenueGrowth)}.`
   } else if (thesis.style === 'quality' && security.profitMargin !== null) {
     matched = security.profitMargin >= 0.1
     evidence = `Profit margin is ${formatPercent(security.profitMargin)}.`

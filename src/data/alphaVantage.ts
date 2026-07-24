@@ -23,6 +23,7 @@ const overviewResponseSchema = z
     DividendYield: z.string().optional(),
     EPS: z.string().optional(),
     ProfitMargin: z.string().optional(),
+    OperatingMarginTTM: z.string().optional(),
     ReturnOnEquityTTM: z.string().optional(),
     QuarterlyRevenueGrowthYOY: z.string().optional(),
     QuarterlyEarningsGrowthYOY: z.string().optional(),
@@ -73,12 +74,40 @@ export type SecuritySnapshot = {
   returnOnEquity: number | null
   revenueGrowth: number | null
   earningsGrowth: number | null
+  operatingMargin?: number | null
+  freeCashFlow?: number | null
+  debtToEquity?: number | null
+  currentRatio?: number | null
   beta: number | null
   week52High: number | null
   week52Low: number | null
   fundamentalsAsOf?: string | null
+  metricProvenance?: Record<string, MetricProvenance>
   source: string
 }
+
+export type MetricProvenance = {
+  source: 'Alpha Vantage' | 'Finnhub' | 'SEC EDGAR'
+  asOf: string | null
+  period: string
+}
+
+const alphaProvenance = (
+  sourceDate: string | null,
+  values: Record<string, number | null>,
+) =>
+  Object.fromEntries(
+    Object.entries(values)
+      .filter(([, value]) => value != null)
+      .map(([key]) => [
+        key,
+        {
+          source: 'Alpha Vantage' as const,
+          asOf: sourceDate,
+          period: 'provider-reported',
+        },
+      ]),
+  )
 
 const apiUrl = 'https://www.alphavantage.co/query'
 const requestSpacingMs = import.meta.env.MODE === 'test' ? 0 : 1100
@@ -208,6 +237,25 @@ export const fetchAlphaVantageSecurity = async (
     )
   }
 
+  const marketCap = parseNumber(overviewResponse.MarketCapitalization)
+  const peRatio = parseNumber(
+    overviewResponse.TrailingPE ?? overviewResponse.PERatio,
+  )
+  const priceToBook = parseNumber(overviewResponse.PriceToBookRatio)
+  const dividendYield = parseNumber(overviewResponse.DividendYield)
+  const eps = parseNumber(overviewResponse.EPS)
+  const profitMargin = parseNumber(overviewResponse.ProfitMargin)
+  const operatingMargin = parseNumber(overviewResponse.OperatingMarginTTM)
+  const returnOnEquity = parseNumber(overviewResponse.ReturnOnEquityTTM)
+  const revenueGrowth = parseNumber(
+    overviewResponse.QuarterlyRevenueGrowthYOY,
+  )
+  const earningsGrowth = parseNumber(
+    overviewResponse.QuarterlyEarningsGrowthYOY,
+  )
+  const beta = parseNumber(overviewResponse.Beta)
+  const fundamentalsAsOf = overviewResponse.LatestQuarter ?? null
+
   return {
     symbol,
     name: overviewResponse.Name || symbol,
@@ -218,21 +266,36 @@ export const fetchAlphaVantageSecurity = async (
     previousClose: parseNumber(quote['08. previous close']),
     changePercent: parseNumber(quote['10. change percent']),
     latestTradingDay,
-    marketCap: parseNumber(overviewResponse.MarketCapitalization),
-    peRatio: parseNumber(
-      overviewResponse.TrailingPE ?? overviewResponse.PERatio,
-    ),
-    priceToBook: parseNumber(overviewResponse.PriceToBookRatio),
-    dividendYield: parseNumber(overviewResponse.DividendYield),
-    eps: parseNumber(overviewResponse.EPS),
-    profitMargin: parseNumber(overviewResponse.ProfitMargin),
-    returnOnEquity: parseNumber(overviewResponse.ReturnOnEquityTTM),
-    revenueGrowth: parseNumber(overviewResponse.QuarterlyRevenueGrowthYOY),
-    earningsGrowth: parseNumber(overviewResponse.QuarterlyEarningsGrowthYOY),
-    beta: parseNumber(overviewResponse.Beta),
+    marketCap,
+    peRatio,
+    priceToBook,
+    dividendYield,
+    eps,
+    profitMargin,
+    operatingMargin,
+    returnOnEquity,
+    revenueGrowth,
+    earningsGrowth,
+    freeCashFlow: null,
+    debtToEquity: null,
+    currentRatio: null,
+    beta,
     week52High: parseNumber(overviewResponse['52WeekHigh']),
     week52Low: parseNumber(overviewResponse['52WeekLow']),
-    fundamentalsAsOf: overviewResponse.LatestQuarter ?? null,
+    fundamentalsAsOf,
+    metricProvenance: alphaProvenance(fundamentalsAsOf, {
+      marketCap,
+      peRatio,
+      priceToBook,
+      dividendYield,
+      eps,
+      profitMargin,
+      operatingMargin,
+      returnOnEquity,
+      revenueGrowth,
+      earningsGrowth,
+      beta,
+    }),
     source: 'Alpha Vantage',
   }
 }

@@ -5,6 +5,11 @@ const apiUrl = 'https://finnhub.io/api/v1'
 const requestWindowMs = 60_000
 const maxRequestsPerWindow = 58
 const requestTimestamps: number[] = []
+const responseCacheLifetimeMs = 6 * 60 * 60 * 1000
+const responseCache = new Map<
+  string,
+  { expiresAt: number; value: unknown }
+>()
 
 const reserveRequestSlot = async (): Promise<void> => {
   const now = Date.now()
@@ -45,10 +50,15 @@ const metricsSchema = z.object({
     .object({
       beta: z.number().nullable().optional(),
       epsTTM: z.number().nullable().optional(),
+      epsGrowthTTMYoy: z.number().nullable().optional(),
+      freeCashFlowTTM: z.number().nullable().optional(),
       marketCapitalization: z.number().nullable().optional(),
       netProfitMarginTTM: z.number().nullable().optional(),
+      operatingMarginTTM: z.number().nullable().optional(),
       peBasicExclExtraTTM: z.number().nullable().optional(),
       pbAnnual: z.number().nullable().optional(),
+      currentRatioQuarterly: z.number().nullable().optional(),
+      'totalDebt/totalEquityQuarterly': z.number().nullable().optional(),
       dividendYieldIndicatedAnnual: z.number().nullable().optional(),
       revenueGrowthTTMYoy: z.number().nullable().optional(),
       roeTTM: z.number().nullable().optional(),
@@ -96,6 +106,8 @@ const sentimentSchema = z.object({
     .optional(),
 })
 
+const peersSchema = z.array(z.string())
+
 export type FinnhubSentiment = {
   score: number
   articleCount: number | null
@@ -106,6 +118,16 @@ const request = async (
   path: string,
   parameters: Record<string, string>,
 ): Promise<unknown> => {
+  const cacheParameters = Object.entries(parameters)
+    .filter(([key]) => key !== 'token')
+    .sort(([left], [right]) => left.localeCompare(right))
+  const cacheKey = `${path}?${new URLSearchParams(cacheParameters).toString()}`
+  const cached = responseCache.get(cacheKey)
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value
+  }
+
   const url = new URL(`${apiUrl}/${path}`)
 
   Object.entries(parameters).forEach(([key, value]) => {
@@ -130,6 +152,10 @@ const request = async (
     throw new Error(value.error)
   }
 
+  responseCache.set(cacheKey, {
+    expiresAt: Date.now() + responseCacheLifetimeMs,
+    value,
+  })
   return value
 }
 
@@ -164,6 +190,46 @@ const resolveSymbol = async (value: string, token: string): Promise<string> => {
 const percentToDecimal = (value: number | null | undefined) =>
   value == null ? null : value / 100
 
+const millionsToCurrency = (value: number | null | undefined) =>
+  value == null ? null : value * 1_000_000
+
+const finnhubProvenance = (
+  metrics: z.infer<typeof metricsSchema>['metric'],
+) => {
+  const values = {
+    marketCap: metrics.marketCapitalization,
+    peRatio: metrics.peBasicExclExtraTTM,
+    priceToBook: metrics.pbAnnual,
+    dividendYield: metrics.dividendYieldIndicatedAnnual,
+    eps: metrics.epsTTM,
+    profitMargin: metrics.netProfitMarginTTM,
+    operatingMargin: metrics.operatingMarginTTM,
+    returnOnEquity: metrics.roeTTM,
+    revenueGrowth: metrics.revenueGrowthTTMYoy,
+    earningsGrowth: metrics.epsGrowthTTMYoy,
+    freeCashFlow: metrics.freeCashFlowTTM,
+    debtToEquity: metrics['totalDebt/totalEquityQuarterly'],
+    currentRatio: metrics.currentRatioQuarterly,
+    beta: metrics.beta,
+  }
+
+  return Object.fromEntries(
+    Object.entries(values)
+      .filter(([, value]) => value != null)
+      .map(([key]) => [
+        key,
+        {
+          source: 'Finnhub' as const,
+          asOf: null,
+          period:
+            key === 'debtToEquity' || key === 'currentRatio'
+              ? 'quarterly'
+              : 'trailing-twelve-months',
+        },
+      ]),
+  )
+}
+
 const mergeQuoteAndMetrics = (
   existing: SecuritySnapshot,
   quote: z.infer<typeof quoteSchema>,
@@ -186,12 +252,32 @@ const mergeQuoteAndMetrics = (
   eps: metrics.epsTTM ?? existing.eps,
   profitMargin:
     percentToDecimal(metrics.netProfitMarginTTM) ?? existing.profitMargin,
+  operatingMargin:
+    percentToDecimal(metrics.operatingMarginTTM) ??
+    existing.operatingMargin ??
+    null,
   returnOnEquity: percentToDecimal(metrics.roeTTM) ?? existing.returnOnEquity,
   revenueGrowth:
     percentToDecimal(metrics.revenueGrowthTTMYoy) ?? existing.revenueGrowth,
+  earningsGrowth:
+    percentToDecimal(metrics.epsGrowthTTMYoy) ?? existing.earningsGrowth,
+  freeCashFlow:
+    millionsToCurrency(metrics.freeCashFlowTTM) ??
+    existing.freeCashFlow ??
+    null,
+  debtToEquity:
+    percentToDecimal(metrics['totalDebt/totalEquityQuarterly']) ??
+    existing.debtToEquity ??
+    null,
+  currentRatio:
+    metrics.currentRatioQuarterly ?? existing.currentRatio ?? null,
   beta: metrics.beta ?? existing.beta,
   week52High: metrics['52WeekHigh'] ?? existing.week52High,
   week52Low: metrics['52WeekLow'] ?? existing.week52Low,
+  metricProvenance: {
+    ...existing.metricProvenance,
+    ...finnhubProvenance(metrics),
+  },
   source: 'Finnhub',
 })
 
@@ -242,11 +328,18 @@ export const fetchFinnhubSecurity = async (
     profitMargin: percentToDecimal(metrics.netProfitMarginTTM),
     returnOnEquity: percentToDecimal(metrics.roeTTM),
     revenueGrowth: percentToDecimal(metrics.revenueGrowthTTMYoy),
-    earningsGrowth: null,
+    earningsGrowth: percentToDecimal(metrics.epsGrowthTTMYoy),
+    operatingMargin: percentToDecimal(metrics.operatingMarginTTM),
+    freeCashFlow: millionsToCurrency(metrics.freeCashFlowTTM),
+    debtToEquity: percentToDecimal(
+      metrics['totalDebt/totalEquityQuarterly'],
+    ),
+    currentRatio: metrics.currentRatioQuarterly ?? null,
     beta: metrics.beta ?? null,
     week52High: metrics['52WeekHigh'] ?? null,
     week52Low: metrics['52WeekLow'] ?? null,
     fundamentalsAsOf: null,
+    metricProvenance: finnhubProvenance(metrics),
     source: 'Finnhub',
   }
 }
@@ -321,4 +414,44 @@ export const fetchFinnhubSentiment = async (
   } catch {
     return null
   }
+}
+
+export const fetchFinnhubPeers = async (
+  symbols: string[],
+  token: string,
+): Promise<string[]> => {
+  const key = token.trim()
+  if (!key) {
+    throw new Error('Enter a Finnhub API key.')
+  }
+
+  const seeds = [
+    ...new Set(
+      symbols
+        .map((symbol) => symbol.trim().toUpperCase())
+        .filter((symbol) => /^[A-Z][A-Z0-9.-]{0,9}$/.test(symbol)),
+    ),
+  ].slice(0, 2)
+  const results = await Promise.allSettled(
+    seeds.map(async (symbol) =>
+      peersSchema.parse(await request('stock/peers', { symbol, token: key })),
+    ),
+  )
+
+  if (results.some((result) => result.status === 'rejected')) {
+    throw new Error('One or more Finnhub peer requests failed.')
+  }
+
+  return [
+    ...new Set(
+      results.flatMap((result) =>
+        result.status === 'fulfilled' ? result.value : [],
+      ),
+    ),
+  ]
+}
+
+export const resetFinnhubCacheForTests = () => {
+  responseCache.clear()
+  requestTimestamps.length = 0
 }

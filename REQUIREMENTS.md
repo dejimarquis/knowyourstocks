@@ -1,403 +1,249 @@
-# Know Your Stocks: MVP Requirements
+# Know Your Stocks: Intelligence v2 Requirements
 
 ## Product goal
 
-Build a minimalist, beginner-first website that lets users define an investment thesis, discover US stocks and ETFs that fit it, understand the fundamental evidence, maintain a local watchlist, and review meaningful weekly changes.
+Build a minimalist, beginner-first educational tool for researching US common stocks against a user-defined investment thesis. The product explains evidence and uncertainty; it is not a brokerage, portfolio manager, return-prediction system, or personalized financial adviser.
 
-The MVP is an educational research tool for the owner and friends. It is not a brokerage, portfolio manager, real-time terminal, or personalized financial adviser.
+## Current scope
 
-## Agreed scope
-
-| Area | MVP decision |
+| Area | Current decision |
 | --- | --- |
-| Audience | Beginner-first, with optional deeper detail |
-| Advice boundary | Educational thesis-fit insights, not direct buy or sell instructions |
-| Securities | US-listed stocks and ETFs |
-| Discovery | Curated liquid, non-penny, non-OTC universe |
-| Lookup | On-demand scoring for other provider-supported securities with adequate data |
-| Accounts | None |
-| Personal data | Thesis, watchlist, preferences, and alert history stay in browser storage |
-| Cross-device sync | None |
-| Thesis input | Guided questions plus an optional private note |
-| Recommendation method | Transparent rules and weighted scoring |
-| Output | 0-100 thesis-fit score with evidence, conflicts, risks, and missing data |
-| Market data | Actual provider-sourced delayed or end-of-day data |
-| Mock data | Allowed only in development and tests, never in production |
-| Shared refresh | Daily after the US market close |
-| On-demand refresh | Opening or refreshing a security fetches the latest provider data and recalculates fit |
-| Personal review | First visit on or after Monday, plus a manual refresh button |
-| Alerts | In-app only |
-| Watchlist | Browser-local, up to 25 securities |
-| Intelligence | Deterministic signals plus bounded Azure Foundry Phi patterns |
-| Analytics | No product analytics, essential error logging only |
-| Feedback | Anonymous feedback form |
-| Cloud | Azure only |
-| Deployment | Successful main-branch pushes deploy through GitHub Actions |
-| Cost | Aim for free and remain below roughly $25 per month during the friend beta |
+| Audience | Beginner-first, with optional deeper evidence |
+| Research universe | Provider-supported US common stocks with adequate data |
+| Discover universe | Curated liquid US common stocks; no ETFs initially |
+| Accounts and sync | None; personal state stays in the browser |
+| Thesis | Guided structured fields plus an optional private note |
+| Authoritative score | Deterministic 0–100 thesis Fit with factor evidence |
+| AI output | Separate thesis-evidence assessment, never a return forecast |
+| AI triggers | Explicit Research Search/Refresh, Discover refresh, or requested Watchlist review |
+| Cached page load | Must not initiate an AI request |
+| Watchlist | Browser-local, up to 25 stocks |
+| Reviews | Manual; the UI marks the first visit in a new week as due but does not run automatically |
+| Alerts | In-app review signals only; no email, SMS, push, or background notification |
+| Cloud | Azure Static Web Apps managed Functions and Azure Foundry |
+| Cost | Low capacity and bounded usage; $25 budget is alert-only |
 
 ## Product principles
 
 - Explain rather than dictate.
-- Show evidence, sources, and freshness.
-- Use simple language first and reveal detail on demand.
-- Favor long-term context over intraday noise.
-- Keep personalization transparent and editable.
-- Never invent missing data or substitute fixtures when a provider fails.
-- Do not use an LLM when deterministic rules or templates are enough.
-- Prefer a working shortcut over a generalized platform during the friend beta.
+- Keep deterministic calculations authoritative and visible.
+- Label AI output separately and treat it as optional, untrusted evidence synthesis.
+- Show source, period, and freshness where available.
+- Distinguish missing data from poor performance.
+- Never invent provider values, candidate symbols, evidence, or model output.
+- Never describe Fit or AI evidence scores as expected-return predictions.
+- Do not call AI on passive page loads.
+- Fall back to complete deterministic behavior when any provider or model step fails.
 
-## Core user journeys
+## Research
 
-### Create a thesis
+An explicit Search or Refresh:
 
-Capture:
+1. obtains a real provider snapshot;
+2. selectively fills missing fundamentals from SEC EDGAR;
+3. normalizes values and metric-level provenance;
+4. calculates deterministic Fit locally; and
+5. may request a separate grounded AI assessment.
 
-- sectors and themes of interest;
-- sectors to avoid;
-- investment horizon;
-- risk tolerance;
-- preferred company size;
-- growth versus income preference;
-- profitability preference;
-- valuation sensitivity;
-- whether ETFs are acceptable;
-- an optional private note.
+The research page shows:
 
-Save the thesis locally. Never send the private note to an AI service.
+- company, ticker, classification, delayed or end-of-day price, and freshness;
+- valuation, growth, profitability, operating margin, free cash flow, leverage, liquidity, resilience, and other available metrics;
+- expandable beginner definitions;
+- deterministic Fit, factor contributions, conflicts, missing data, and evidence;
+- a distinct AI thesis-evidence score from 0–100;
+- one of `Compelling`, `Promising but mixed`, `Watch closely`, or `Reconsider`;
+- grounded strengths, risks or gaps, confidence, cache/freshness status, and unavailable fallback.
 
-### View the home brief
+The AI score measures support in the supplied evidence. It does not replace Fit, alter Fit factors, recommend a trade, or predict returns. Loading the six-hour cached security on page load must not request AI. A later explicit Search or Refresh may reuse a matching six-hour AI cache entry instead of making a new Foundry call.
 
-Show:
+## Fundamental data and provenance
 
-- latest data freshness;
-- notable daily and weekly movements relevant to the thesis or watchlist;
-- up to five strong new thesis matches;
-- watchlist securities whose fit materially changed;
-- earnings expected within 14 days;
-- recent sentiment when reliable coverage exists;
-- short explanations of why each item matters;
-- next Monday review status;
-- a manual refresh button.
+Finnhub normalization must:
 
-### Research a stock or ETF
+- map `epsGrowthTTMYoy` to earnings growth;
+- convert provider percentages to decimal application values;
+- convert provider free-cash-flow millions to currency units;
+- include operating margin, free cash flow, debt-to-equity, and current ratio;
+- preserve existing values when a refresh omits a metric;
+- attach metric-level source and period metadata.
 
-Opening or refreshing a security requests the latest available real provider data. End-of-day freshness is acceptable. "Live" means connected to an actual data source rather than displaying mocked values.
+Expected provenance sources are:
 
-Show:
+- **Finnhub:** trailing-twelve-month or quarterly provider metrics; the provider may not supply a metric date;
+- **Alpha Vantage:** provider-reported values associated with its latest reported quarter when available;
+- **SEC EDGAR:** selectively derived values tied to the latest comparable filing date.
 
-- name, ticker, industry or category, market cap or AUM when available;
-- latest delayed close and timestamp;
-- price history and common performance periods;
-- volatility and drawdown context;
-- relevant growth, profitability, cash flow, debt, resilience, and valuation metrics;
-- thesis-fit score with factor contributions;
-- positive evidence, conflicts, risks, and missing data;
-- upcoming earnings or known events;
-- related securities;
-- beginner-friendly metric definitions;
-- data sources and timestamps;
-- watchlist action.
+SEC remains a selective fundamentals fallback, not a quote provider. It fills supported missing profit margin, revenue growth, EPS, return on equity, or earnings growth evidence without overwriting available provider values.
 
-ETF pages use fund-relevant attributes and do not apply company-only metrics.
+## Discover
 
-### Use the watchlist
+Discover is a manual-refresh workflow. No recommendation provider or model spend occurs merely by opening the page.
 
-- Add and remove securities.
-- Sort by fit, movement, earnings date, or date added.
-- See fit-change and alert states.
-- Persist the list in the same browser.
-- Warn that clearing browser storage or changing devices loses local data.
-- Review the watchlist on demand and on the next visit after a new Monday.
-- Generate deterministic fit, price, fundamental, earnings, stale-data, sentiment, and concentration signals.
-- Display model-proposed patterns separately from authoritative signals.
+Each refresh:
 
-### Send feedback
+1. starts from the versioned curated liquid-US common-stock universe;
+2. uses up to two recent/current symbols as Finnhub peer seeds;
+3. accepts only peers that also exist in the curated universe;
+4. excludes watched symbols and the currently researched symbol;
+5. prioritizes thesis themes, style, and peer proximity;
+6. fetches at most eight candidates;
+7. selectively SEC-enriches at most three incomplete candidates;
+8. shows at most five recommendations.
 
-- Open a small form from any page.
-- Capture category, optional rating, and free text.
-- Do not request names, email, holdings, or financial details.
-- Show explicit success or failure.
+When five valid candidates exist, grounded AI may rank exactly those five and supply a thesis-evidence score, opinion, confidence, rationale, and risk for each. It may not add or substitute a symbol. If AI fails validation, times out, is rate-limited, or is unavailable, deterministic Fit order, rationale, and risk remain usable. Partial provider results are explicitly labeled. ETFs are deferred from the initial Discover universe.
 
-## Thesis-fit scoring
+## Watchlist and reviews
 
-Initial stock weights:
+The watchlist stores up to 25 stocks in browser storage. A requested review refreshes current data, retains the previous snapshot and Fit, and persists the deterministic brief before AI completes.
 
-| Factor | Weight |
-| --- | ---: |
-| Sector and theme alignment | 20 |
-| Risk-profile alignment | 20 |
-| Fundamental quality | 20 |
-| Horizon and growth alignment | 15 |
-| Financial resilience | 10 |
-| Valuation preference | 10 |
-| Explicit local preferences | 5 |
+Deterministic review signals are business-first:
 
-ETF scoring uses exposure, diversification, expense, liquidity or AUM, volatility, and horizon.
-
-Rules:
-
-- show every factor contribution;
-- cap the influence of one metric;
-- distinguish missing data from poor performance;
-- require adequate fresh-data coverage;
-- compare metrics within sensible groups when data permits;
-- use save, dismiss, or more-like-this actions only as small adjustments;
-- version the scoring configuration;
-- avoid direct buy and sell language.
-
-Explanations come from controlled templates tied to actual factors, not an LLM.
-
-## Sentiment
-
-Sentiment is secondary context and never determines a recommendation by itself.
-
-- Prefer provider-supplied financial-news sentiment when included in the approved data plan.
-- Otherwise use a finance-specific classifier such as FinBERT only through a reliable free hosted API.
-- Analyze headlines or permitted summaries, not social-media posts.
-- Require enough recent sources before showing a trend.
-- Show source count, confidence, provider or model, and date.
-- Show unavailable when sentiment cannot be calculated reliably.
-- Do not host a model in Azure for the MVP.
-
-## Weekly review and alerts
-
-Shared market data refreshes after each US trading day.
-
-Personal review runs:
-
-- on the first visit on or after Monday if it has not run that week;
-- when the user presses refresh.
-
-Create local alerts for:
-
+- material Fit changes and thesis drift;
+- revenue and earnings growth;
+- profit and operating margin;
+- EPS and free cash flow;
+- debt-to-equity and current ratio;
+- material valuation changes;
+- newer filing or reporting periods;
 - earnings within 14 days;
-- material fit-score changes;
-- factors changing between supportive and conflicting;
-- notable relevant daily or weekly movement;
-- meaningful sentiment shifts;
-- stale or unavailable data.
+- stale or failed data;
+- concentration;
+- supported headline-sentiment context.
 
-There are no email, SMS, push, or background notifications.
+There is no standalone daily-move alert. A large latest-day move may appear only as context attached to a business, filing, or earnings signal. Headline sentiment is context, not business evidence.
 
-## Watchlist intelligence
+When Phi is enabled, every requested review sends compact current and previous evidence for every watched stock, including stocks with no deterministic change signal. A valid response must assess every supplied stock exactly once and may also prioritize verified signals and identify cross-stock patterns supported by evidence from at least two distinct symbols.
 
-- Deterministic rules guarantee coverage and assign severity.
-- Azure Foundry Phi-4-mini may reorder verified signals and propose cross-signal patterns.
-- Phi receives compact signal aliases rather than raw provider payloads.
-- User-facing explanations are assembled from verified deterministic evidence.
-- The model cannot alter metrics, severity, fit scores, or source dates.
-- Reject unknown evidence, malformed output, and buy/sell/hold language.
-- If Phi fails, times out, exceeds budget, or fails validation, show the complete deterministic brief.
-- The free-text thesis note is excluded unless the user explicitly opts in.
-- Limit model calls to one best-effort call per completed review.
-- Cap watchlists at 25 securities, reserve model calls in durable Azure storage, and stop globally at the configured monthly ceiling.
+The UI exposes these model statuses:
 
-## Data requirements
+- `not_requested` — migrated older review;
+- `loading` — deterministic brief is already available while AI runs;
+- `generated` — validated AI summary, per-stock assessments, and any patterns are available;
+- `fallback` — AI failed or did not pass validation;
+- `disabled` — user disabled Phi for the review;
+- `rate_limited` — a process-local model limit was reached.
 
-Start curated discovery with approximately 100-250 liquid stocks and 25-50 broad, sector, and thematic ETFs.
+All fallback, disabled, and rate-limited states retain the deterministic brief.
 
-Exclude:
+## Shared grounded intelligence API
 
-- OTC securities;
-- penny stocks;
-- very illiquid securities;
-- securities with inadequate data coverage.
+Research, Discover, and Watchlist use one shared Foundry client with operation-specific request and response schemas.
 
-Use the provider-supported US symbol directory for lookup. Out-of-set securities can be scored on demand when enough current profile, price, and fundamental data exists.
+Required controls:
 
-Required data:
+- compact evidence packets and bounded request sizes;
+- operation-specific Zod validation;
+- evidence aliases mapped back to supplied evidence;
+- rejection of unknown, duplicate, insufficient, excessive, or symbol-mismatched evidence;
+- exact supplied-symbol constraints for recommendations and watchlist assessments;
+- rejection of direct trade language, price targets, guarantees, and invented numeric claims;
+- normalization of common schema variants before strict final validation;
+- temperature zero, JSON mode, and bounded output tokens;
+- one retry for a timeout, HTTP 429, or server error;
+- six-hour in-process response cache separated by deployment, operation, and request;
+- configurable process-local global and browser daily limits;
+- timeout and HTTP status mapping;
+- deterministic fallback on every failure path.
 
-- security profile and classification;
-- delayed or end-of-day price history;
-- market cap or ETF AUM when available;
-- financial statements or normalized fundamentals;
-- earnings calendar;
-- news metadata and permitted sentiment;
-- source and freshness.
+Current default output ceilings are 360 tokens for Research, 450 for Discover recommendations, and 1600 for Watchlist. Current default process-local controls are a 25-second attempt timeout, 500 calls per process window, and 10 calls per browser per process window. These controls can reset on cold start or scale-out and are not a durable billing ceiling.
 
-Use one primary provider behind a small adapter. Before implementation, verify public-display rights, caching, attribution, redistribution, rate limits, coverage, and cost. Reject unofficial scraping.
+## Model selection
 
-Candidate providers include Finnhub, Financial Modeling Prep, Twelve Data, Alpha Vantage, and Massive or Polygon.
+The frozen Research, recommendation, and Watchlist bake-off selected **Phi-4-mini-instruct**, deployed as `phi-4-mini-watchlist`, as the single global winner.
 
-### Provider gate status, 23 Jul 2026
+Observed evidence:
 
-Current pricing and terms research did not find a self-service plan below $25 per month that unambiguously permits public display of US market data and derived recommendation scores.
+- Phi-4-mini-reasoning produced stronger reasoning on some Research cases, but observed chunks took roughly 39–54 seconds.
+- Reasoning produced malformed recommendation outputs, confused evidence with symbols, and had lower aggregate reliability.
+- Phi-4-mini-instruct produced usable successful responses in roughly 2.6–8.6 seconds and grounded recommendation and Watchlist tasks better.
+- Instruct still experienced intermittent low-capacity serverless timeouts.
+- Neither model met the aspirational 95% raw-schema-validity gate.
 
-- Finnhub and Massive individual plans prohibit sharing data or derived results with other users.
-- Twelve Data explicitly licenses external display through substantially higher-priced business plans or a separate agreement.
-- Alpha Vantage requires separate commercial or display approval and its usable paid plan already exceeds the budget.
-- Financial Modeling Prep Starter is the closest technical and budget fit, but public display requires a separate Data Display and Licensing Agreement whose cost and restrictions are not published.
+Therefore production must retain normalization, strict evidence validation, bounded retries, caching, rate limits, and deterministic fallback. The selected model is a practical reliability choice, not a claim that raw model output is independently safe.
 
-Do not implement a production provider adapter until Financial Modeling Prep confirms in writing whether Starter can cover this free educational friend beta, including:
+## Privacy and local data
 
-1. public display of end-of-day prices, fundamental summaries, earnings dates, and news metadata;
-2. client-side derived thesis-fit scores;
-3. permitted caching duration;
-4. required attribution;
-5. total API and display-license cost.
+Versioned browser storage may contain:
 
-If Financial Modeling Prep cannot approve the use within budget, revisit the product's access model or budget rather than violating a personal-use data license.
+- thesis and optional note;
+- watchlist, current and previous snapshots, Fits, briefs, model status, and feedback;
+- cached Research AI assessments;
+- cached Discover results;
+- recent/current symbols and interface preferences;
+- a random intelligence client identifier.
 
-### Interim free-data implementation
+The Finnhub key stays in `sessionStorage` and goes directly to Finnhub. It must not enter the managed intelligence APIs.
 
-Personal research uses a bring-your-own-key Finnhub adapter:
+Structured thesis fields are sent to Foundry only after an explicit AI-triggering action. Research and Discover omit the free-text note. Watchlist includes the note only after separate opt-in. See `SECURITY.md` for packet details.
 
-- each tester obtains a free personal, non-commercial API key;
-- the key stays in session-only browser storage and is sent directly to Finnhub;
-- Finnhub provides the quote, profile, and fundamental metrics needed for the fit score with a much more usable personal rate limit;
-- successful normalized results are cached locally for six hours;
-- Alpha Vantage remains only for the real IBM demo and its two calls are spaced by more than one second;
-- missing fundamental metrics are derived from official SEC EDGAR company facts through a same-origin managed API;
-- no owner-owned key is embedded or shared with site visitors;
-- Yahoo Finance is not used because it has no official supported API, its public-use terms are unsuitable, and its endpoints are prone to blocking;
-- Azure provides hosting and compute but no first-party stock-market feed.
-
-This unblocks real-data scoring without pretending that a personal API tier grants shared public-display rights. Replace it with an approved shared provider before automated discovery across the full universe.
-
-### Beginner education
-
-- Every visible metric must provide an expandable plain-language definition and explain how it helps evaluate the business.
-- Fit-score details must explain beta, profitability, growth, resilience, and valuation without assuming investing knowledge.
-- The fit score must state that it measures alignment with the user's preferences and does not predict future returns.
-
-## Local data
-
-Use versioned browser storage for:
-
-- thesis;
-- watchlist;
-- dismissed and liked matches;
-- viewed securities used for local history;
-- previous fit scores;
-- last weekly review;
-- alert read and dismiss state;
-- interface preferences.
-
-Corrupt or incompatible data must show a recovery choice rather than silently disappearing.
-
-## Technical design
-
-### Application
-
-- React, TypeScript, and Vite.
-- React Router when multiple screens are introduced.
-- Zod or equivalent for external and local data validation.
-- Lightweight accessible charts.
-- Vitest and React Testing Library.
-- One Playwright smoke suite for the main journey.
-- No monorepo or generalized design system package.
-
-### Azure
+## Azure architecture and cost
 
 Use:
 
-1. Azure Static Web Apps Free for hosting, TLS, CDN, GitHub deployment, and small managed Functions.
-2. One Azure Storage account:
-   - Table Storage for feedback.
-   - Blob Storage for an EOD-aware on-demand market-data cache if quotas require it.
-3. Minimal built-in logging or Application Insights only when needed to diagnose failures.
-4. Azure Foundry with a serverless Phi deployment for bounded watchlist pattern selection.
+1. Azure Static Web Apps Free for the SPA and managed Functions.
+2. Same-origin SEC, Research intelligence, recommendation intelligence, and Watchlist intelligence endpoints.
+3. One low-capacity Azure Foundry serverless deployment: `phi-4-mini-watchlist`.
+4. A $25 Azure budget alert for visibility.
 
-Do not add PostgreSQL, Cosmos DB, Key Vault, API Management, Container Apps, or a dedicated Function App.
+Azure Table quota code, SDK dependency, Bicep module, post-provision hook, connection setting, and durable monthly hard-stop claims have been removed. The budget alert does not block Foundry calls. Cost control depends on low capacity, bounded tokens, caches, process-local limits, short timeouts, 429 handling, and deterministic fallback.
 
-Configure the first friend-beta resources directly and document the settings. Add infrastructure-as-code only when multiple environments or repeated setup make it worthwhile.
+Do not add a database, Key Vault, API Management, dedicated Function App, or background worker for this friend beta unless later requirements justify it.
 
-### Market-data flow
+## Provider and legal boundary
 
-1. A scheduled GitHub Actions workflow runs after market close.
-2. A refresh script calls the approved provider using a secret.
-3. It validates and normalizes the curated dataset.
-4. It derives metrics and available sentiment.
-5. It builds static versioned JSON for discovery.
-6. It deploys only after validation passes.
-7. A small `GET /api/security/{symbol}` Function fetches the latest real data for an opened or manually refreshed ticker.
-8. The Function validates the response, optionally uses a short EOD-aware cache, and never returns test fixtures.
-9. The browser calculates the personal score locally so the thesis remains private.
+The friend beta uses bring-your-own-key Finnhub research. Each tester supplies a personal, non-commercial key. Alpha Vantage remains limited to the public IBM demo. SEC EDGAR supplies official filing facts through the same-origin API.
 
-### Feedback flow
+This arrangement does not grant rights to redistribute centrally licensed live market data. A future shared provider or broader public recommendation product still requires explicit display, caching, attribution, and derived-data rights.
 
-- `POST /api/feedback` validates category, rating, text length, page, and app version.
-- Store feedback in Azure Table Storage.
-- Add a honeypot and payload limits.
-- Add stronger rate limiting only if abuse occurs.
-- Review through Azure Storage Explorer or a small owner-only script.
+## Safety and accessibility
 
-## Deployment
+- Display educational-information and not-investment-advice language.
+- Avoid imperative trade language, certainty, guarantees, and price targets.
+- Show unavailable instead of fabricating missing data.
+- Do not redistribute article text.
+- Support keyboard and screen readers, WCAG 2.2 AA core flows, reduced motion, and non-color-only status cues.
+- Clearly distinguish deterministic Fit, AI evidence assessment, stale data, provider partials, cache results, and model fallback.
 
-On pushes and pull requests:
+## Validation before push or deployment
 
-- install dependencies;
-- run type-check;
-- run focused tests;
-- build production assets.
+Run the existing lint, web tests, API tests, browser tests, and builds. In addition, complete hands-on local browser testing for:
 
-On main, deploy automatically to Azure Static Web Apps.
+- explicit Research Search/Refresh and no AI on cached page load;
+- separate deterministic Fit and AI assessment;
+- Discover manual refresh, exclusions, limits, partial results, and fallback;
+- Watchlist business-first signals and absence of a standalone daily-move alert;
+- stable-stock per-stock AI assessment;
+- every model status and deterministic fallback;
+- mobile and desktop layout, keyboard flow, and visible evidence/provenance.
 
-The scheduled refresh:
+Do not claim intelligence v2 is deployed until validation, push, deployment, and live verification are complete.
 
-- runs after market close on US weekdays;
-- supports manual dispatch;
-- validates freshness, schema, record count, and attribution;
-- preserves the last deployed site when refresh fails.
+## Cleanup manifest
 
-Do not build a multi-environment promotion pipeline for the friend beta.
+Keep:
 
-## Safety, privacy, and legal
+- the Azure Static Web App;
+- the Foundry account;
+- winning deployment `phi-4-mini-watchlist`;
+- the $25 budget alert.
 
-- Display "Educational information, not investment advice."
-- Avoid promises, certainty, and imperative trade language.
-- Explain that scores reflect user preferences and incomplete historical data.
-- Show data delays, timestamps, and attribution.
-- Do not redistribute copyrighted article text.
-- Keep personal research state in the browser.
-- Do not collect product analytics.
-- Do not request personal or financial information in feedback.
-- Keep provider keys in GitHub or Azure secrets.
+Current live cleanup candidates:
 
-## Accessibility and quality
+- Storage account `sthqjzjkf5lnc4k`;
+- Static Web Apps settings `INTELLIGENCE_USAGE_STORAGE_CONNECTION_STRING` and `FOUNDRY_MAX_MONTHLY_CALLS`;
+- losing deployments `phi-4-mini-reasoning-watchlist`, `phi-4-reasoning-watchlist`, and `phi-4-watchlist`;
+- the attached monitoring/project chain only if dependency review proves it is not needed.
 
-- Meet WCAG 2.2 AA for core flows.
-- Support keyboard and screen readers.
-- Do not rely on red and green alone.
-- Respect reduced motion.
-- Give charts textual summaries.
-- Keep mobile fast and uncluttered.
-- Clearly distinguish real, stale, unavailable, and test data.
-
-## Focused testing
-
-Cover:
-
-- scoring factors, weights, missing data, and stock versus ETF behavior;
-- thesis and watchlist persistence;
-- Monday and manual review logic;
-- alert deduplication;
-- provider normalization and refresh validation;
-- on-demand lookup, cache behavior, and explicit provider failure;
-- evidence and disclaimer rendering;
-- feedback validation;
-- one browser journey from thesis creation to watchlist and security detail.
+Cleanup is destructive. Verify dependencies and obtain explicit destructive confirmation before deleting any resource or setting.
 
 ## Non-goals
 
+- Brokerage, holdings, trading, portfolio accounting, or return prediction.
 - Accounts or cross-device sync.
-- Brokerage connections, holdings, trading, or portfolio accounting.
-- Intraday streaming or exchange tick data.
-- Options, crypto, forex, or non-US markets.
-- Email, SMS, or push notifications.
-- Social feeds or public portfolios.
-- LLM-generated investment analysis.
-- Open-ended AI investment advice or autonomous actions.
-- Subscription billing.
-- Unverified web browsing by the model.
-- A database for application state.
-- A full admin dashboard.
-- Multiple Azure environments or extensive infrastructure automation.
-
-## Implementation phases
-
-1. **Foundation and provider:** Initialize the app, persist this specification, add focused tooling and test-only fixtures, approve one provider, and select the curated universe.
-2. **Useful vertical slice:** Build local thesis persistence, scoring, discovery, lookup, watchlist, detail pages, real on-demand EOD data, and the scheduled static refresh.
-3. **Continuous deployment:** Add Azure Static Web Apps and GitHub Actions for push deployment and scheduled data refresh.
-4. **Weekly habit and feedback:** Add Monday/manual alerts and anonymous Azure Table Storage feedback.
-5. **Friend-beta hardening:** Validate mobile, accessibility, provider failure, quota, attribution, legal language, and cost. Verify production never serves mocked market values.
+- Automatic background reviews or notifications.
+- Intraday streaming.
+- ETF recommendations in the initial Discover universe.
+- Open-ended AI chat, autonomous actions, or ungrounded investment analysis.
+- A durable application-level Foundry billing stop.
+- A database for user state.

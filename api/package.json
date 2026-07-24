@@ -10,10 +10,10 @@
     "build": "tsc",
     "prestart": "npm run build",
     "start": "func start --typescript --port 7072",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval:models": "vitest run src/lib/eval/modelEval.test.ts"
   },
   "dependencies": {
-    "@azure/data-tables": "^13.3.2",
     "@azure/functions": "^4.9.0",
     "zod": "^4.4.3"
   },

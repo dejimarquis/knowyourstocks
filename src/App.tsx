@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import './App.css'
+import { DiscoverPanel } from './components/DiscoverPanel'
 import { SecurityLookup } from './components/SecurityLookup'
 import { WatchlistPanel } from './components/WatchlistPanel'
 import {
@@ -27,7 +28,10 @@ import {
   getWeeklyReviewKey,
   isWeeklyReviewDue,
 } from './watchlist/generateWatchlistBrief'
-import { requestWatchlistIntelligence } from './watchlist/requestWatchlistIntelligence'
+import {
+  applyWatchlistIntelligenceResult,
+  requestWatchlistIntelligence,
+} from './watchlist/requestWatchlistIntelligence'
 
 function App() {
   const [initialThesis] = useState(() => loadThesis())
@@ -44,8 +48,17 @@ function App() {
     initialWatchlist.recoveryRequired,
   )
   const [watchlistError, setWatchlistError] = useState<string | null>(null)
-  const [activeView, setActiveView] = useState<'research' | 'watchlist'>(
-    'research',
+  const [activeView, setActiveView] = useState<
+    'research' | 'discover' | 'watchlist'
+  >('research')
+  const [currentResearchSymbol, setCurrentResearchSymbol] = useState<
+    string | null
+  >(null)
+  const [requestedResearchSymbol, setRequestedResearchSymbol] = useState<
+    string | null
+  >(null)
+  const [recentResearchSymbols, setRecentResearchSymbols] = useState<string[]>(
+    [],
   )
   const [reviewStatus, setReviewStatus] = useState<
     'idle' | 'reviewing' | 'error'
@@ -156,18 +169,14 @@ function App() {
         thesis,
       ).then((intelligenceBrief) => {
         setWatchlist((current) => {
-          if (
-            current.lastReviewAt !== reviewedWithBrief.lastReviewAt ||
-            !current.modelPreferences.enablePhi
-          ) {
-            return current
+          const completedWatchlist = applyWatchlistIntelligenceResult(
+            current,
+            reviewedWithBrief.lastReviewAt,
+            intelligenceBrief,
+          )
+          if (completedWatchlist !== current) {
+            saveWatchlist(completedWatchlist)
           }
-
-          const completedWatchlist = {
-            ...current,
-            latestBrief: intelligenceBrief,
-          }
-          saveWatchlist(completedWatchlist)
           return completedWatchlist
         })
       }).finally(() => setReviewStatus('idle'))
@@ -192,6 +201,13 @@ function App() {
             type="button"
           >
             Research
+          </button>
+          <button
+            aria-current={activeView === 'discover' ? 'page' : undefined}
+            onClick={() => setActiveView('discover')}
+            type="button"
+          >
+            Discover
           </button>
           <button
             aria-current={activeView === 'watchlist' ? 'page' : undefined}
@@ -221,7 +237,16 @@ function App() {
           <>
             <h1 className="visually-hidden">Understand a stock quickly</h1>
             <SecurityLookup
+              onSecurityResearched={(security) => {
+                setCurrentResearchSymbol(security.symbol)
+                setRequestedResearchSymbol(null)
+                setRecentResearchSymbols((current) => [
+                  security.symbol,
+                  ...current.filter((symbol) => symbol !== security.symbol),
+                ].slice(0, 2))
+              }}
               onToggleWatch={handleToggleWatch}
+              requestedSymbol={requestedResearchSymbol}
               thesis={thesis}
               watchlistLocked={reviewStatus === 'reviewing'}
               watchedSymbols={watchedSymbols}
@@ -422,6 +447,19 @@ function App() {
           </section>
             </details>
           </>
+        ) : activeView === 'discover' ? (
+          <DiscoverPanel
+            currentSymbol={currentResearchSymbol}
+            loadFinnhubKey={loadFinnhubKey}
+            onAddToWatchlist={handleToggleWatch}
+            onResearch={(symbol) => {
+              setRequestedResearchSymbol(symbol)
+              setActiveView('research')
+            }}
+            recentSymbols={recentResearchSymbols}
+            thesis={thesis}
+            watchedSymbols={watchedSymbols}
+          />
         ) : (
           <WatchlistPanel
             onIncludeThesisNoteChange={(includeThesisNote) =>

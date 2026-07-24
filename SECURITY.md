@@ -4,53 +4,106 @@
 
 Know Your Stocks does not receive or store a user's Finnhub key.
 
-- The key is kept in the browser's `sessionStorage`.
-- It is saved as soon as it is entered, so it survives page refreshes in the same browser session.
+- The key is stored in browser `sessionStorage`.
 - It is sent directly from the browser to Finnhub.
-- It is normally cleared when the browser session closes, although browser session-restore behavior can preserve a session after a crash or restart.
-- It is never committed to this repository, included in the JavaScript bundle, sent to Azure, or placed in application logs.
+- It is not committed, bundled, sent to Azure, or intentionally logged.
+- Session restore behavior can preserve it after a crash or restart.
 
-`sessionStorage` reduces persistence but is not an encrypted secret vault. JavaScript running on this site's origin, a browser extension with page access, or malware on the device could potentially read it. To reduce that risk:
+`sessionStorage` is not an encrypted vault. Same-origin JavaScript, a privileged browser extension, or compromised device software could read it. The app therefore loads no ads, analytics, or remote scripts and uses a restrictive Content Security Policy.
 
-- the app loads no analytics, advertisements, remote scripts, or third-party UI packages;
-- Azure serves a restrictive Content Security Policy;
-- each user supplies a personal, non-commercial Finnhub key rather than sharing the owner's key;
-- the public IBM demo uses Alpha Vantage's non-secret `demo` key.
+Normalized market snapshots may be cached in browser `localStorage` for six hours. Those caches contain market data, not the Finnhub key.
 
-If a personal key may have been exposed, replace it through Finnhub and close the affected browser session.
+## SEC fallback
 
-Normalized stock results are cached in browser `localStorage` for up to six hours to avoid unnecessary API calls. The cache contains market data, not the API key.
+The same-origin SEC endpoint receives a public ticker symbol. It does not receive the Finnhub key, thesis, watchlist, or intelligence client identifier. SEC values are normalized and attached only to supported missing metrics with filing-date provenance.
 
-The same-origin SEC fallback receives only a public ticker symbol. It does not receive the user's Finnhub key, thesis, watchlist, or other personal data.
+## Browser-local personal data
 
-## Personal investment thesis
+The structured thesis, optional note, watchlist, snapshots, Fits, briefs, cached Research assessments, cached Discover results, model statuses, and feedback remain in browser storage. Clearing browser data or changing devices loses them.
 
-The thesis is stored in browser `localStorage` so it survives reloads. It is not sent to Azure, Alpha Vantage, or an AI service. Other browser profiles cannot normally access it, but anyone with access to the same unlocked browser profile or device may be able to view it.
+Do not enter account numbers, holdings, passwords, or other sensitive financial information in the optional thesis note.
 
-Do not enter account numbers, holdings, passwords, or other sensitive financial information in the thesis note.
+## Explicit AI triggers
 
-## Watchlist intelligence
+The application calls Azure Foundry only after an explicit action:
 
-The watchlist, snapshots, brief, and feedback remain in browser `localStorage`.
+- Research **Search** or **Refresh**;
+- Discover **Refresh ideas**;
+- Watchlist **Review**, when Phi is enabled.
 
-When a review completes, the managed API may send a compact evidence packet to Azure Foundry Phi. It contains:
+Loading a cached Research or Discover page does not initiate an AI request. A matching cached AI result may be displayed or reused after an explicit action.
 
-- structured thesis preferences;
-- deterministic signal titles, summaries, and evidence;
-- the free-text thesis note only when the user explicitly opts in.
+## Intelligence packets
 
-It does not contain the watchlist inventory, raw provider payloads, browser history, or Finnhub key. The user can disable Phi enhancement before a review. The server does not persist watchlist packets or prompts. It logs only coarse status and error information.
+All intelligence packets exclude the Finnhub key and raw provider responses.
 
-Phi output is treated as untrusted:
+### Research
 
-- only known evidence aliases are accepted;
-- model patterns must cite verified deterministic signals;
-- unknown evidence and prohibited trade-advice language are rejected;
-- model failures fall back to the deterministic brief;
-- model calls time out and cannot block the initial watchlist result.
+Research sends:
 
-## Server-side credentials and quota state
+- symbol, company name, sector, and industry;
+- structured thesis sectors, horizon, risk, and style;
+- deterministic Fit total and label;
+- compact metric and Fit evidence with source/period provenance.
 
-Azure Static Web Apps application settings contain the Foundry key and the connection string for a dedicated quota-only Storage account. These values are not sent to the browser or committed to the repository.
+The free-text thesis note is not sent.
 
-The Storage account contains only monthly global and daily anonymous-browser call counters. The browser identifier is random, then converted server-side into a keyed hash that rotates daily. It does not contain IP addresses, symbols, thesis text, watchlists, prompts, model output, market data, or Finnhub keys. One atomic transaction reserves both counters, enforcing the model-call ceiling across Function cold starts and scale-out. Production fails closed if durable quota storage is not configured.
+### Discover
+
+Discover sends exactly the supplied candidate set being ranked, with:
+
+- symbol and company name;
+- structured thesis fields;
+- deterministic Fit context;
+- compact candidate evidence and selected normalized metrics.
+
+The free-text thesis note is not sent. The model cannot add a symbol outside the supplied candidates.
+
+### Watchlist
+
+Watchlist v2 sends the watched stock inventory because every requested review must assess every stock, including stable stocks. The compact packet contains:
+
+- symbol, name, sector, and industry;
+- current and previous selected fundamentals;
+- deterministic Fit factors and current/previous evidence;
+- freshness, earnings, concentration, signal, and supported sentiment context;
+- deterministic signals;
+- structured thesis fields;
+- the free-text thesis note only after explicit opt-in.
+
+The app does not intentionally persist raw packets or prompts server-side. The shared API keeps only a six-hour in-process cache of validated normalized responses keyed by a request hash and logs coarse status/error information.
+
+## Untrusted-model controls
+
+Foundry output is never authoritative market data. The shared API:
+
+- validates operation-specific request and response schemas;
+- normalizes limited known output variants;
+- resolves aliases only to supplied evidence;
+- rejects unknown, duplicate, insufficient, excessive, or misattached evidence;
+- requires recommendation symbols to come from the supplied set;
+- requires one Watchlist assessment per supplied stock;
+- requires cross-stock evidence from at least two distinct symbols;
+- rejects direct trade language, price targets, guarantees, and invented numeric claims;
+- retries only bounded transient failures;
+- falls back to deterministic output on timeout, HTTP 429, server error, malformed JSON, or validation failure.
+
+No AI score predicts returns or changes deterministic Fit, signal severity, metric values, or source dates.
+
+## Client identifier and rate limits
+
+A random intelligence client identifier is stored in browser `localStorage` and sent to the intelligence endpoints. It supports process-local per-browser limits. It is not an account identifier, is not derived from an IP address, and is no longer hashed into Azure Table quota records.
+
+The current API also maintains a process-local global daily window. These limits can reset during cold starts or scale-out, so they reduce bursts but do not provide a durable spend ceiling.
+
+## Server credentials and cost controls
+
+Foundry endpoint, deployment, and API key settings are held in Azure Static Web Apps application settings and are not returned to the browser or committed to the repository.
+
+Azure Table quota code and IaC have been removed. The current code does not require `INTELLIGENCE_USAGE_STORAGE_CONNECTION_STRING` or `FOUNDRY_MAX_MONTHLY_CALLS`. If those settings remain live, they are cleanup candidates rather than active security controls.
+
+The $25 Azure budget is alert-only. It does not stop Foundry requests. Safety and cost controls are low serverless capacity, bounded tokens, six-hour caches, process-local limits, short timeouts, bounded retry behavior, and deterministic fallback.
+
+## Destructive cleanup
+
+Do not delete the live quota Storage account, obsolete settings, losing model deployments, or attached monitoring/project resources until dependencies are verified and explicit destructive confirmation is obtained. See `.azure/deployment-plan.md` and `DECISIONS.md`.

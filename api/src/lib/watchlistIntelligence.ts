@@ -1,407 +1,483 @@
-import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import { reserveIntelligenceQuota } from './intelligenceQuota'
+import {
+  asRecord,
+  assertNoInventedNumericClaims,
+  assertNoProhibitedAdvice,
+  callGroundedModel,
+  compactSnapshotSchema,
+  confidenceSchema,
+  createEvidenceCatalog,
+  groundedEvidenceSchema,
+  normalizeConfidence,
+  normalizeOpinion,
+  normalizeScore,
+  opinionSchema,
+  pick,
+  thesisSchema,
+  type GroundedEvidence,
+} from './groundedIntelligence'
 
-const evidenceSchema = z.object({
+const legacyEvidenceSchema = z.object({
   label: z.string().max(120),
   current: z.string().max(160),
   previous: z.string().max(160).nullable(),
 })
 
 const signalSchema = z.object({
-  id: z.string().max(180),
-  symbol: z.string().max(12).nullable(),
+  id: z.string().min(1).max(180),
+  symbol: z.string().max(16).nullable(),
   type: z.string().max(60),
   severity: z.enum(['attention', 'watch', 'informational', 'stable']),
   title: z.string().max(180),
   summary: z.string().max(500),
-  evidence: z.array(evidenceSchema).max(8),
+  evidence: z.array(legacyEvidenceSchema).max(8),
 })
 
-const requestSchema = z.object({
-  version: z.literal(1),
-  thesis: z.object({
-    sectors: z.array(z.string().max(80)).max(4),
-    horizon: z.string().max(40),
-    risk: z.string().max(40),
-    style: z.string().max(40),
-    note: z.string().max(500).optional(),
-  }),
-  deterministicSignals: z.array(signalSchema).max(75),
+const stockSchema = z.object({
+  symbol: z.string().min(1).max(16),
+  name: z.string().min(1).max(160),
+  sector: z.string().max(120).nullable().optional(),
+  industry: z.string().max(120).nullable().optional(),
+  currentSnapshot: compactSnapshotSchema.optional(),
+  previousSnapshot: compactSnapshotSchema.nullable().optional(),
+  evidence: z.array(groundedEvidenceSchema).min(1).max(16),
+})
+
+export const watchlistIntelligenceRequestSchema = z
+  .object({
+    version: z.union([z.literal(1), z.literal(2)]),
+    thesis: thesisSchema,
+    stocks: z.array(stockSchema).max(25).optional().default([]),
+    deterministicSignals: z.array(signalSchema).max(75).optional().default([]),
+  })
+  .superRefine((request, context) => {
+    if (
+      request.version === 2 &&
+      request.stocks.length === 0
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Version 2 watchlist reviews require at least one stock.',
+      })
+    }
+    const symbols = request.stocks.map((stock) => stock.symbol.toUpperCase())
+    if (new Set(symbols).size !== symbols.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Watchlist stocks must have unique symbols.',
+      })
+    }
+    const evidenceIds = [
+      ...request.stocks.flatMap((stock) =>
+        stock.evidence.map((evidence) => evidence.id.toLowerCase()),
+      ),
+      ...request.deterministicSignals.map((signal) => signal.id.toLowerCase()),
+    ]
+    if (new Set(evidenceIds).size !== evidenceIds.length) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Watchlist evidence IDs must be unique.',
+      })
+    }
+  })
+
+const mappedEvidenceSchema = z.object({
+  evidenceId: z.string(),
+  text: z.string(),
+})
+
+const assessmentSchema = z.object({
+  symbol: z.string(),
+  score: z.number().int().min(0).max(100),
+  opinion: opinionSchema,
+  summary: z.string().min(1).max(300),
+  strengths: z.array(mappedEvidenceSchema).min(1).max(3),
+  risks: z.array(mappedEvidenceSchema).min(1).max(3),
+  confidence: confidenceSchema,
 })
 
 const patternSchema = z.object({
   title: z.string().min(1).max(120),
   explanation: z.string().min(1).max(360),
   evidenceIds: z.array(z.string()).min(2).max(8),
-  confidence: z.enum(['low', 'medium', 'high']),
+  confidence: confidenceSchema,
   thesisRelationship: z.string().min(1).max(240),
 })
 
-const modelOutputSchema = z.object({
+export const watchlistIntelligenceResponseSchema = z.object({
   prioritizedSignalIds: z.array(z.string()).max(75),
+  prioritizedEvidenceIds: z.array(z.string()).max(75),
   summary: z.string().min(1).max(500),
+  assessments: z.array(assessmentSchema).max(25),
   experimentalPatterns: z.array(patternSchema).max(3),
+  crossStockPatterns: z.array(patternSchema).max(3),
   uncertainties: z.array(z.string().max(240)).max(6),
 })
 
-const detailedSelectionSchema = z.object({
-  order: z.array(z.string()).max(75),
-  patterns: z.array(
-    z.object({
-      evidenceIds: z.array(z.string()).min(2).max(8),
-      label: z.string().min(1).max(120),
-      confidence: z.enum(['low', 'medium', 'high']),
-    }),
-  ).max(3),
-  uncertainties: z.array(z.string().max(240)).max(6),
-})
-
-const simplifiedSelectionSchema = z.object({
-  relationship: z.string().min(1).max(120),
-  value: z.string().min(1).max(180),
-})
-
-const phiCompactSelectionSchema = z.object({
-  priority_order: z.array(z.string()).max(75),
-  cross_signals: z.array(z.record(z.string(), z.unknown())).max(3),
-})
-
-const modelSelectionSchema = z.union([
-  detailedSelectionSchema,
-  simplifiedSelectionSchema,
-  phiCompactSelectionSchema,
-])
-
-export type WatchlistIntelligenceRequest = z.infer<typeof requestSchema>
-export type WatchlistIntelligenceOutput = z.infer<typeof modelOutputSchema>
-
-const prohibitedAdvice =
-  /\b(buy|sell|hold|short|purchase|exit|overweight|underweight|avoid|go\s+long|price\s+target|target\s+price|guarante(?:e|ed|es)|risk[-\s]?free)\b/i
-const cacheLifetimeMs = 6 * 60 * 60 * 1000
-const dailyWindowMs = 24 * 60 * 60 * 1000
-
-const responseCache = new Map<
-  string,
-  { expiresAt: number; value: WatchlistIntelligenceOutput }
->()
-let globalWindowStartedAt = Date.now()
-let globalCalls = 0
-const clientCalls = new Map<string, { windowStartedAt: number; count: number }>()
-
-const positiveInteger = (value: string | undefined, fallback: number) => {
-  const parsed = Number(value)
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
-}
-
-const getSettings = () => ({
-  endpoint: process.env.FOUNDRY_OPENAI_ENDPOINT,
-  key: process.env.FOUNDRY_API_KEY,
-  deployment: process.env.FOUNDRY_DEPLOYMENT ?? 'phi-4-mini-watchlist',
-  maxDailyCalls: positiveInteger(process.env.FOUNDRY_MAX_DAILY_CALLS, 500),
-  maxClientDailyCalls: positiveInteger(
-    process.env.FOUNDRY_MAX_CLIENT_DAILY_CALLS,
-    10,
-  ),
-  maxMonthlyCalls: positiveInteger(
-    process.env.FOUNDRY_MAX_MONTHLY_CALLS,
-    1000,
-  ),
-})
-
-const rateLimit = (clientId: string) => {
-  const now = Date.now()
-  const settings = getSettings()
-
-  if (now - globalWindowStartedAt >= dailyWindowMs) {
-    globalWindowStartedAt = now
-    globalCalls = 0
-  }
-
-  if (globalCalls >= settings.maxDailyCalls) {
-    throw new Error('The daily intelligence budget has been reached.')
-  }
-
-  const current = clientCalls.get(clientId)
-  const client =
-    !current || now - current.windowStartedAt >= dailyWindowMs
-      ? { windowStartedAt: now, count: 0 }
-      : current
-
-  if (client.count >= settings.maxClientDailyCalls) {
-    throw new Error('The daily intelligence limit for this browser was reached.')
-  }
-
-  globalCalls += 1
-  client.count += 1
-  clientCalls.set(clientId, client)
-}
-
-const prompt = (packet: WatchlistIntelligenceRequest) => {
-  const aliasToSignal = new Map<string, string>()
-  const signalLines = packet.deterministicSignals.map((signal, index) => {
-    const alias = `s${index + 1}`
-    aliasToSignal.set(alias, signal.id)
-    return `${alias} | ${signal.symbol ?? 'watchlist'} | ${signal.type} | ${signal.severity} | ${signal.title} | ${signal.summary}`
-  })
-
-  return {
-    aliases: aliasToSignal,
-    body: {
-      messages: [
-        {
-          role: 'system',
-          content: `Return JSON only with exact keys order, patterns, uncertainties.
-Use only supplied aliases such as s1.
-Each pattern requires at least two aliases.
-Never repeat the input. Never use buy, sell, hold, short, or guaranteed-return language.
-Example output:
-{"order":["s1","s2"],"patterns":[{"evidenceIds":["s1","s2"],"label":"Business momentum changed","confidence":"medium"}],"uncertainties":[]}`,
-        },
-        {
-          role: 'user',
-          content: `Thesis sectors: ${packet.thesis.sectors.join(', ')}
-Horizon: ${packet.thesis.horizon}
-Risk: ${packet.thesis.risk}
-Style: ${packet.thesis.style}
-${packet.thesis.note ? `Optional thesis note: ${packet.thesis.note}\n` : ''}Signals:
-${signalLines.join('\n')}
-Select the priority order and any cross-signal patterns.`,
-        },
-      ],
-      temperature: 0,
-      max_tokens: 280,
-      response_format: { type: 'json_object' },
-    },
-  }
-}
-
-const selectionToOutput = (
-  selection: z.infer<typeof modelSelectionSchema>,
-  packet: WatchlistIntelligenceRequest,
-  aliases: Map<string, string>,
-): WatchlistIntelligenceOutput => {
-  const signalsById = new Map(
-    packet.deterministicSignals.map((signal) => [signal.id, signal]),
-  )
-  const normalizedSelection = 'order' in selection
-    ? selection
-    : 'priority_order' in selection
-      ? {
-          order: selection.priority_order,
-          patterns: selection.cross_signals
-            .map((pattern) => {
-              const candidateIds =
-                pattern.evidenceIds ??
-                pattern.signal_ids ??
-                pattern.signals ??
-                []
-              const evidenceIds = Array.isArray(candidateIds)
-                ? candidateIds.filter(
-                    (value): value is string => typeof value === 'string',
-                  )
-                : []
-              const label =
-                typeof pattern.label === 'string'
-                  ? pattern.label
-                  : typeof pattern.relationship === 'string'
-                    ? pattern.relationship
-                    : 'Possible cross-signal relationship'
-              const confidence: 'low' | 'medium' | 'high' =
-                pattern.confidence === 'high'
-                  ? 'high'
-                  : pattern.confidence === 'medium'
-                    ? 'medium'
-                    : 'low'
-              return { evidenceIds, label, confidence }
-            })
-            .filter((pattern) => pattern.evidenceIds.length >= 2),
-          uncertainties: [],
-        }
-      : (() => {
-        const selectedAlias = aliases.has(selection.value)
-          ? selection.value
-          : [...aliases.entries()].find(([, id]) =>
-              id.includes(selection.value),
-            )?.[0]
-        return {
-          order: selectedAlias ? [selectedAlias] : [],
-          patterns: [],
-          uncertainties: [
-            'Phi returned only one relationship signal, so no cross-signal pattern was shown.',
-          ],
-        }
-        })()
-  const prioritizedSignalIds = [
-    ...new Set(
-      normalizedSelection.order
-        .map((alias) => aliases.get(alias))
-        .filter((id): id is string => id != null),
-    ),
-  ]
-  const experimentalPatterns = normalizedSelection.patterns.flatMap((pattern) => {
-    if (prohibitedAdvice.test(pattern.label)) {
-      throw new Error('Model returned prohibited investment advice language.')
-    }
-
-    const evidenceIds = [
-      ...new Set(
-        pattern.evidenceIds
-          .map((alias) => aliases.get(alias))
-          .filter((id): id is string => id != null),
-      ),
-    ]
-
-    if (evidenceIds.length < 2) {
-      return []
-    }
-
-    const evidence = evidenceIds
-      .map((id) => signalsById.get(id))
-      .filter((signal): signal is z.infer<typeof signalSchema> => signal != null)
-    const types = new Set(evidence.map((signal) => signal.type))
-    const title =
-      types.has('concentration')
-        ? 'Concentration may amplify another watchlist change'
-        : types.has('thesis_drift') && types.has('fundamental_change')
-          ? 'Thesis fit and fundamentals changed together'
-          : types.has('price_move') && types.has('earnings')
-            ? 'Price movement is occurring near an earnings event'
-            : 'Multiple verified watchlist signals may be connected'
-
-    return [{
-      title,
-      explanation: evidence.map((signal) => signal.summary).join(' '),
-      evidenceIds,
-      confidence: pattern.confidence,
-      thesisRelationship: `This pattern may matter to the ${packet.thesis.style} style and ${packet.thesis.horizon} horizon in the supplied thesis.`,
-    }]
-  })
-
-  return {
-    prioritizedSignalIds,
-    summary:
-      experimentalPatterns.length > 0
-        ? 'Several verified watchlist signals may be connected. Review the evidence before drawing a conclusion.'
-        : 'The brief is ordered by verified severity and thesis relevance.',
-    experimentalPatterns,
-    uncertainties: normalizedSelection.uncertainties,
-  }
-}
-
-const validateOutput = (
-  value: unknown,
-  packet: WatchlistIntelligenceRequest,
-): WatchlistIntelligenceOutput => {
-  const output = modelOutputSchema.parse(value)
-  const evidenceIds = new Set(
-    packet.deterministicSignals.map((signal) => signal.id),
-  )
-
-  if (
-    output.prioritizedSignalIds.some((signalId) => !evidenceIds.has(signalId))
-  ) {
-    throw new Error('Model returned an unknown prioritized signal.')
-  }
-
-  output.experimentalPatterns.forEach((pattern) => {
-    if (pattern.evidenceIds.some((signalId) => !evidenceIds.has(signalId))) {
-      throw new Error('Model returned an unknown pattern evidence ID.')
-    }
-    if (new Set(pattern.evidenceIds).size < 2) {
-      throw new Error('Model returned insufficient distinct pattern evidence.')
-    }
-  })
-
-  const narratives = [
-    output.summary,
-    ...output.uncertainties,
-    ...output.experimentalPatterns.flatMap((pattern) => [
-      pattern.title,
-      pattern.explanation,
-      pattern.thesisRelationship,
-    ]),
-  ]
-
-  if (narratives.some((text) => prohibitedAdvice.test(text))) {
-    throw new Error('Model returned prohibited investment advice language.')
-  }
-
-  return output
-}
+export type WatchlistIntelligenceRequest = z.infer<
+  typeof watchlistIntelligenceRequestSchema
+>
+export type WatchlistIntelligenceOutput = z.infer<
+  typeof watchlistIntelligenceResponseSchema
+>
 
 export const parseIntelligenceRequest = (
   value: unknown,
-): WatchlistIntelligenceRequest => requestSchema.parse(value)
+): WatchlistIntelligenceRequest =>
+  watchlistIntelligenceRequestSchema.parse(value)
+
+const signalToEvidence = (
+  signal: z.infer<typeof signalSchema>,
+): GroundedEvidence => ({
+  id: signal.id,
+  symbol: signal.symbol ?? 'watchlist',
+  text: [
+    signal.title,
+    signal.summary,
+    ...signal.evidence.map(
+      (item) =>
+        `${item.label}: ${item.current}${item.previous ? `; previously ${item.previous}` : ''}`,
+    ),
+  ].join('. '),
+})
+
+const requestEvidence = (request: WatchlistIntelligenceRequest) => [
+  ...request.stocks.flatMap((stock) => stock.evidence),
+  ...request.deterministicSignals.map(signalToEvidence),
+]
+
+const suppliedSymbols = (request: WatchlistIntelligenceRequest) => {
+  const symbols =
+    request.stocks.length > 0
+      ? request.stocks.map((stock) => stock.symbol)
+      : request.deterministicSignals.flatMap((signal) =>
+          signal.symbol ? [signal.symbol] : [],
+        )
+  return [...new Map(symbols.map((symbol) => [symbol.toUpperCase(), symbol])).values()]
+}
+
+const canonicalSymbol = (value: unknown, symbols: Map<string, string>) => {
+  if (typeof value !== 'string') {
+    throw new Error('Model returned an out-of-set symbol.')
+  }
+  const symbol = symbols.get(value.trim().toUpperCase())
+  if (!symbol) {
+    throw new Error('Model returned an out-of-set symbol.')
+  }
+  return symbol
+}
+
+const validateAttachment = (
+  evidence: GroundedEvidence[],
+  symbol: string,
+) => {
+  if (
+    evidence.some((item) => {
+      const attached = item.symbol.toUpperCase()
+      return attached !== symbol.toUpperCase()
+    })
+  ) {
+    throw new Error('Model returned misattached evidence IDs.')
+  }
+  return evidence
+}
+
+const normalizeWatchlistOutput = (
+  value: unknown,
+  request: WatchlistIntelligenceRequest,
+): WatchlistIntelligenceOutput => {
+  const record = asRecord(value)
+  const summaryRecord = asRecord(
+    pick(record, ['summary', 'Summary']),
+  )
+  const evidence = requestEvidence(request)
+  const catalog = createEvidenceCatalog(evidence)
+  const symbols = new Map(
+    suppliedSymbols(request).map((symbol) => [symbol.toUpperCase(), symbol]),
+  )
+  const rawSummary = pick(record, [
+    'summary',
+    'Summary',
+    'overallSummary',
+    'overall_summary',
+    'overallThesisEvidenceSummary',
+    'overall_thesis_evidence_summary',
+    'overview',
+  ])
+  const summary =
+    typeof rawSummary === 'string' && rawSummary.trim()
+      ? rawSummary.trim()
+      : typeof pick(summaryRecord, [
+            'summary',
+            'overallSummary',
+            'overall_summary',
+          ]) === 'string'
+        ? String(
+            pick(summaryRecord, [
+              'summary',
+              'overallSummary',
+              'overall_summary',
+            ]),
+          ).trim()
+        : 'Phi assessed the supplied watchlist evidence. Review each grounded stock assessment below.'
+
+  const prioritized = catalog.resolveIds(
+    pick(record, [
+      'priorityEvidenceIds',
+      'PriorityEvidenceIds',
+      'prioritizedEvidenceIds',
+      'prioritizedSignalIds',
+      'priority_order',
+      'order',
+    ]) ??
+      pick(summaryRecord, [
+        'priorityEvidenceIds',
+        'prioritizedEvidenceIds',
+        'prioritizedSignalIds',
+      ]),
+    { max: 75 },
+  )
+  const rawAssessmentsFromKeys = Object.entries(record)
+    .filter(([symbol, assessment]) => {
+      const isSupplied = symbols.has(symbol.toUpperCase())
+      return (
+        isSupplied &&
+        typeof assessment === 'object' &&
+        assessment !== null
+      )
+    })
+    .map(([symbol, assessment]) => ({
+      symbol,
+      ...asRecord(assessment),
+    }))
+  const rawAssessments =
+    pick(record, ['assessments', 'Assessments']) ??
+    pick(summaryRecord, ['assessments', 'Assessments']) ??
+    rawAssessmentsFromKeys
+  if (!Array.isArray(rawAssessments)) {
+    throw new Error('Model returned invalid watchlist assessments.')
+  }
+
+  const assessments = rawAssessments.map((rawAssessment) => {
+    const assessment = asRecord(rawAssessment)
+    const symbol = canonicalSymbol(
+      pick(assessment, ['symbol', 'Symbol', 'ticker']),
+      symbols,
+    )
+    const score = normalizeScore(
+      pick(assessment, ['score', 'Score', 'thesisEvidenceScore']),
+    )
+    const opinion = normalizeOpinion(
+      pick(assessment, ['opinion', 'Opinion']),
+      score,
+    )
+    const strengths = validateAttachment(
+      catalog.resolveIds(
+        pick(assessment, [
+          'strengthEvidenceIds',
+          'StrengthEvidenceIds',
+          'strengths',
+          'evidenceIds',
+        ]),
+        { min: 1, max: 3 },
+      ),
+      symbol,
+    )
+    const risks = validateAttachment(
+      catalog.resolveIds(
+        pick(assessment, [
+          'riskEvidenceIds',
+          'RiskEvidenceIds',
+          'risks',
+          'evidenceIds',
+        ]),
+        { min: 1, max: 3 },
+      ),
+      symbol,
+    )
+    const assessmentSummary = pick(assessment, [
+      'summary',
+      'Summary',
+      'assessment',
+    ])
+    if (typeof assessmentSummary === 'string') {
+      assertNoProhibitedAdvice([assessmentSummary])
+    }
+    const normalizedAssessmentSummary = `${strengths[0].text} Key uncertainty: ${risks[0].text}`
+
+    assertNoProhibitedAdvice([normalizedAssessmentSummary])
+    assertNoInventedNumericClaims(normalizedAssessmentSummary, [
+      ...strengths,
+      ...risks,
+    ])
+
+    return {
+      symbol,
+      score,
+      opinion,
+      summary: normalizedAssessmentSummary,
+      strengths: strengths.map((item) => ({
+        evidenceId: item.id,
+        text: item.text,
+      })),
+      risks: risks.map((item) => ({
+        evidenceId: item.id,
+        text: item.text,
+      })),
+      confidence: normalizeConfidence(
+        pick(assessment, ['confidence', 'Confidence']),
+      ),
+    }
+  })
+
+  const assessmentSymbols = assessments.map((item) => item.symbol.toUpperCase())
+  if (
+    assessments.length !== symbols.size ||
+    new Set(assessmentSymbols).size !== symbols.size ||
+    [...symbols.keys()].some((symbol) => !assessmentSymbols.includes(symbol))
+  ) {
+    throw new Error('Model must assess every supplied watchlist stock once.')
+  }
+
+  const rawPatterns =
+    pick(record, [
+      'crossStockPatterns',
+      'CrossStockPatterns',
+      'patterns',
+      'experimentalPatterns',
+      'cross_signals',
+    ]) ??
+    pick(summaryRecord, [
+      'crossStockPatterns',
+      'patterns',
+      'experimentalPatterns',
+      'cross_signals',
+    ]) ??
+    []
+  if (!Array.isArray(rawPatterns)) {
+    throw new Error('Model returned invalid cross-stock patterns.')
+  }
+
+  const experimentalPatterns = rawPatterns.map((rawPattern) => {
+    const pattern = asRecord(rawPattern)
+    const patternEvidence = catalog.resolveIds(
+      pick(pattern, [
+        'evidenceIds',
+        'EvidenceIds',
+        'evidence_ids',
+        'signal_ids',
+        'signals',
+      ]),
+      { min: 2, max: 8 },
+    )
+    const distinctSymbols = new Set(
+      patternEvidence
+        .map((item) => item.symbol.toUpperCase())
+        .filter((symbol) => symbol !== 'WATCHLIST'),
+    )
+    if (distinctSymbols.size < 2) {
+      throw new Error(
+        'Cross-stock patterns require evidence from distinct symbols.',
+      )
+    }
+    const title =
+      pick(pattern, ['title', 'Title', 'label']) ??
+      'Verified evidence may connect these watchlist items'
+    const explanation =
+      pick(pattern, ['explanation', 'Explanation', 'relationship']) ??
+      patternEvidence.map((item) => item.text).join(' ')
+    const thesisRelationship =
+      pick(pattern, [
+        'thesisRelationship',
+        'ThesisRelationship',
+        'thesis_relationship',
+      ]) ??
+      'Review how this shared evidence affects the supplied thesis.'
+    if (
+      typeof title !== 'string' ||
+      typeof explanation !== 'string' ||
+      typeof thesisRelationship !== 'string'
+    ) {
+      throw new Error('Model returned an invalid cross-stock narrative.')
+    }
+
+    assertNoProhibitedAdvice([title, explanation, thesisRelationship])
+    assertNoInventedNumericClaims(explanation, patternEvidence)
+    assertNoInventedNumericClaims(thesisRelationship, patternEvidence)
+
+    return {
+      title: title.trim(),
+      explanation: explanation.trim(),
+      evidenceIds: patternEvidence.map((item) => item.id),
+      confidence: normalizeConfidence(
+        pick(pattern, ['confidence', 'Confidence']),
+      ),
+      thesisRelationship: thesisRelationship.trim(),
+    }
+  })
+
+  const rawUncertainties =
+    pick(record, ['uncertainties', 'Uncertainties']) ??
+    pick(summaryRecord, ['uncertainties', 'Uncertainties']) ??
+    []
+  const uncertainties = Array.isArray(rawUncertainties)
+    ? rawUncertainties.filter(
+        (item): item is string => typeof item === 'string',
+      )
+    : []
+  assertNoProhibitedAdvice([summary, ...uncertainties])
+  assertNoInventedNumericClaims(summary, evidence)
+  uncertainties.forEach((item) => assertNoInventedNumericClaims(item, evidence))
+
+  const signalIds = new Set(
+    request.deterministicSignals.map((signal) => signal.id),
+  )
+  const prioritizedEvidenceIds = prioritized.map((item) => item.id)
+  const output = {
+    prioritizedSignalIds: prioritizedEvidenceIds.filter((id) =>
+      signalIds.has(id),
+    ),
+    prioritizedEvidenceIds,
+    summary,
+    assessments,
+    experimentalPatterns,
+    crossStockPatterns: experimentalPatterns,
+    uncertainties,
+  }
+  return watchlistIntelligenceResponseSchema.parse(output)
+}
 
 export const generateWatchlistIntelligence = async (
   request: WatchlistIntelligenceRequest,
   clientId: string,
 ): Promise<WatchlistIntelligenceOutput> => {
-  if (request.deterministicSignals.length === 0) {
+  const symbols = suppliedSymbols(request)
+  const evidence = requestEvidence(request)
+  if (evidence.length === 0) {
     return {
       prioritizedSignalIds: [],
-      summary: 'No verified watchlist changes need model prioritization.',
+      prioritizedEvidenceIds: [],
+      summary: 'No verified watchlist evidence was supplied for review.',
+      assessments: [],
       experimentalPatterns: [],
+      crossStockPatterns: [],
       uncertainties: [],
     }
   }
 
-  const settings = getSettings()
-
-  if (!settings.endpoint || !settings.key) {
-    throw new Error('Model intelligence is not configured.')
-  }
-
-  const packetHash = createHash('sha256')
-    .update(JSON.stringify(request))
-    .digest('hex')
-  const cached = responseCache.get(packetHash)
-
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached.value
-  }
-
-  rateLimit(clientId)
-  await reserveIntelligenceQuota(
-    clientId,
-    settings.maxMonthlyCalls,
-    settings.maxClientDailyCalls,
-  )
-
-  const generation = prompt(request)
-  const url = `${settings.endpoint.replace(/\/$/, '')}/openai/deployments/${encodeURIComponent(settings.deployment)}/chat/completions?api-version=2024-10-21`
-  const response = await fetch(url, {
-    method: 'POST',
-    signal: AbortSignal.timeout(25_000),
-    headers: {
-      'Content-Type': 'application/json',
-      'api-key': settings.key,
-    },
-    body: JSON.stringify(generation.body),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Foundry returned HTTP ${response.status}.`)
-  }
-
-  const value = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>
-  }
-  const content = value.choices?.[0]?.message?.content
-
-  if (!content) {
-    throw new Error('Foundry returned no intelligence output.')
-  }
-
-  const selection = modelSelectionSchema.parse(JSON.parse(content))
-  const output = validateOutput(
-    selectionToOutput(selection, request, generation.aliases),
+  const catalog = createEvidenceCatalog(evidence)
+  return callGroundedModel({
+    operation: 'watchlist',
     request,
-  )
-  responseCache.set(packetHash, {
-    expiresAt: Date.now() + cacheLifetimeMs,
-    value: output,
+    clientId,
+    maxTokens: 1600,
+    systemPrompt:
+      'Review every supplied watchlist stock using only supplied evidence aliases. Include stable stocks. Prioritize business evidence over price movement. Select evidence; the server maps user-facing prose. Do not give trade instructions or predict returns.',
+    userPrompt: `Thesis: ${request.thesis.style}; ${request.thesis.horizon}; ${request.thesis.risk}; sectors ${request.thesis.sectors.join(', ')}
+${request.thesis.note ? `Optional thesis note: ${request.thesis.note}\n` : ''}Watchlist symbols: ${symbols.join(', ')}
+Evidence:
+${catalog.lines.join('\n')}
+Return priorityEvidenceIds, assessments, crossStockPatterns, uncertainties. Assess every supplied symbol exactly once with symbol, score, opinion, strengthEvidenceIds, riskEvidenceIds, confidence. Score MUST be an integer from 0 to 100, never a 0-5 or 0-10 scale: about 80 means strongly supportive with manageable risks, about 50 means genuinely mixed, and about 20 means evidence materially contradicts the thesis. Opinion must be Compelling, Promising but mixed, Watch closely, or Reconsider. Cross-stock patterns need only evidenceIds and confidence, with at least two distinct evidence IDs from distinct symbols. Stable evidence is valid; priorityEvidenceIds may be empty. Keep JSON compact.`,
+    normalize: (value) => normalizeWatchlistOutput(value, request),
   })
-  return output
 }

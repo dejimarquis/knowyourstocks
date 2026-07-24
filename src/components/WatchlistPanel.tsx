@@ -30,6 +30,18 @@ const formatDate = (value: string) =>
     year: 'numeric',
   }).format(new Date(value))
 
+const modelStatusMessage = {
+  not_requested: 'AI was not requested for this older review.',
+  loading:
+    'The deterministic brief is ready. Phi is reviewing the verified evidence now.',
+  fallback:
+    'The deterministic brief is shown. Phi was unavailable or its response did not pass evidence checks, so no AI assessment was generated.',
+  disabled:
+    'Phi was disabled for this review. Only the deterministic brief was generated.',
+  rate_limited:
+    'The Phi review limit was reached. Only the deterministic brief was generated.',
+} as const
+
 export function WatchlistPanel({
   watchlist,
   onRemove,
@@ -51,6 +63,12 @@ export function WatchlistPanel({
     brief?.deterministicInsights.filter(
       (insight) => insight.severity === 'informational',
     ) ?? []
+  const assessmentsBySymbol = new Map(
+    brief?.aiAssessments.map((assessment) => [
+      assessment.symbol.toUpperCase(),
+      assessment,
+    ]) ?? [],
+  )
   const weeklyDue = isWeeklyReviewDue(watchlist)
 
   return (
@@ -154,17 +172,6 @@ export function WatchlistPanel({
                     </strong>
                   </div>
 
-                  {brief.aiSummary ? (
-                    <div className="ai-summary">
-                      <span>Phi summary</span>
-                      <p>{brief.aiSummary}</p>
-                    </div>
-                  ) : brief.modelStatus === 'fallback' ? (
-                    <p className="model-fallback">
-                      The rules-based brief is shown. Phi was unavailable or its
-                      response did not pass evidence checks.
-                    </p>
-                  ) : null}
                   <time dateTime={brief.generatedAt}>
                     {formatDate(brief.generatedAt)}
                   </time>
@@ -219,61 +226,118 @@ export function WatchlistPanel({
                   </details>
                 ) : null}
 
-                {brief.experimentalInsights.length > 0 ? (
+                {brief.modelStatus === 'generated' &&
+                brief.prioritizedSignalIds.length > 0 ? (
+                  <section className="verified-priorities">
+                    <span>Phi priority order</span>
+                    <strong>Prioritized verified signals</strong>
+                    <ol>
+                      {brief.prioritizedSignalIds.map((signalId) => {
+                        const signal = brief.deterministicInsights.find(
+                          (insight) => insight.id === signalId,
+                        )
+                        return signal ? (
+                          <li key={signal.id}>
+                            <strong>{signal.title}</strong>
+                            <span>{signal.summary}</span>
+                          </li>
+                        ) : null
+                      })}
+                    </ol>
+                  </section>
+                ) : null}
+
+                {brief.modelStatus === 'generated' && brief.aiSummary ? (
+                  <section className="ai-review" aria-label="Phi evidence review">
+                    <div className="ai-summary">
+                      <span>Phi evidence review</span>
+                      <strong>Overall thesis-evidence summary</strong>
+                      <p>{brief.aiSummary}</p>
+                      <small>
+                        Evidence assessment only. This is not a trade
+                        recommendation.
+                      </small>
+                    </div>
+                  </section>
+                ) : brief.modelStatus !== 'generated' ? (
+                  <p
+                    className={`model-status model-status-${brief.modelStatus}`}
+                    role={brief.modelStatus === 'loading' ? 'status' : undefined}
+                  >
+                    {modelStatusMessage[brief.modelStatus]}
+                  </p>
+                ) : null}
+
+                {brief.modelStatus === 'generated' &&
+                brief.crossStockPatterns.length > 0 ? (
                   <section className="experimental-patterns">
                     <div>
-                      <span>Experimental patterns</span>
-                      <strong>Connections suggested by Phi</strong>
+                      <span>Cross-stock patterns</span>
+                      <strong>Connections across verified evidence</strong>
                     </div>
-                    {brief.experimentalInsights.map((insight) => (
-                      <details key={insight.id}>
-                        <summary>{insight.title}</summary>
-                        <p>{insight.summary}</p>
-                        <ul>
-                          {insight.evidence.map((evidence) => (
-                            <li key={evidence.label}>
-                              <strong>{evidence.label}</strong>
-                              <span>{evidence.current}</span>
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="insight-feedback">
-                          <span>Was this useful?</span>
-                          <button
-                            aria-pressed={
-                              watchlist.insightFeedback[insight.id] ===
-                              'useful'
-                            }
-                            onClick={() =>
-                              onInsightFeedback(insight.id, 'useful')
-                            }
-                            type="button"
-                          >
-                            Useful
-                          </button>
-                          <button
-                            aria-pressed={
-                              watchlist.insightFeedback[insight.id] ===
-                              'not_useful'
-                            }
-                            onClick={() =>
-                              onInsightFeedback(insight.id, 'not_useful')
-                            }
-                            type="button"
-                          >
-                            Not useful
-                          </button>
-                        </div>
-                      </details>
-                    ))}
+                    {brief.crossStockPatterns.map((pattern, index) => {
+                      const insightId = `experimental_pattern:watchlist:${index}`
+                      const evidence =
+                        brief.experimentalInsights[index]?.evidence ??
+                        pattern.evidenceIds.map((evidenceId) => ({
+                          label: evidenceId,
+                          current: 'Verified evidence',
+                          previous: null,
+                        }))
+                      return (
+                        <details key={`${pattern.title}:${index}`}>
+                          <summary>{pattern.title}</summary>
+                          <p>{pattern.explanation}</p>
+                          <p>{pattern.thesisRelationship}</p>
+                          <ul>
+                            {evidence.map((item) => (
+                              <li key={item.label}>
+                                <strong>{item.label}</strong>
+                                <span>{item.current}</span>
+                              </li>
+                            ))}
+                          </ul>
+                          <small>Confidence: {pattern.confidence}</small>
+                          <div className="insight-feedback">
+                            <span>Was this useful?</span>
+                            <button
+                              aria-pressed={
+                                watchlist.insightFeedback[insightId] ===
+                                'useful'
+                              }
+                              onClick={() =>
+                                onInsightFeedback(insightId, 'useful')
+                              }
+                              type="button"
+                            >
+                              Useful
+                            </button>
+                            <button
+                              aria-pressed={
+                                watchlist.insightFeedback[insightId] ===
+                                'not_useful'
+                              }
+                              onClick={() =>
+                                onInsightFeedback(insightId, 'not_useful')
+                              }
+                              type="button"
+                            >
+                              Not useful
+                            </button>
+                          </div>
+                        </details>
+                      )
+                    })}
                     <p>
-                      Experimental patterns connect verified signals but may
-                      still be incomplete. They do not change signal severity.
+                      Cross-stock patterns connect verified evidence but may
+                      still be incomplete. They do not change deterministic
+                      signal severity.
                     </p>
                   </section>
                 ) : null}
 
-                {brief.aiUncertainties.length > 0 ? (
+                {brief.modelStatus === 'generated' &&
+                brief.aiUncertainties.length > 0 ? (
                   <details className="brief-secondary">
                     <summary>
                       What Phi could not determine ({brief.aiUncertainties.length})
@@ -325,6 +389,60 @@ export function WatchlistPanel({
                   <span>Saved</span>
                   <strong>{formatDate(item.addedAt)}</strong>
                 </div>
+                {assessmentsBySymbol.get(item.symbol.toUpperCase()) ? (
+                  <details className="watchlist-assessment">
+                    <summary>
+                      <span>Phi evidence assessment</span>
+                      <strong>
+                        {
+                          assessmentsBySymbol.get(item.symbol.toUpperCase())
+                            ?.score
+                        }
+                        /100 ·{' '}
+                        {
+                          assessmentsBySymbol.get(item.symbol.toUpperCase())
+                            ?.opinion
+                        }
+                      </strong>
+                    </summary>
+                    <p>
+                      {
+                        assessmentsBySymbol.get(item.symbol.toUpperCase())
+                          ?.summary
+                      }
+                    </p>
+                    <small>
+                      Confidence:{' '}
+                      {
+                        assessmentsBySymbol.get(item.symbol.toUpperCase())
+                          ?.confidence
+                      }
+                      . Evidence assessment only.
+                    </small>
+                    <div className="assessment-evidence">
+                      <div>
+                        <span>Key strengths</span>
+                        <ul>
+                          {assessmentsBySymbol
+                            .get(item.symbol.toUpperCase())
+                            ?.strengths.map((strength) => (
+                              <li key={strength.evidenceId}>{strength.text}</li>
+                            ))}
+                        </ul>
+                      </div>
+                      <div>
+                        <span>Key risks</span>
+                        <ul>
+                          {assessmentsBySymbol
+                            .get(item.symbol.toUpperCase())
+                            ?.risks.map((risk) => (
+                              <li key={risk.evidenceId}>{risk.text}</li>
+                            ))}
+                        </ul>
+                      </div>
+                    </div>
+                  </details>
+                ) : null}
                 {item.reviewError ? (
                   <span className="watchlist-item-error" role="status">
                     Data unavailable

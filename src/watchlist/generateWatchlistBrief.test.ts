@@ -43,7 +43,7 @@ const snapshot = (
 })
 
 describe('generateWatchlistBrief', () => {
-  it('detects fit decline, price movement, and an upcoming earnings date', () => {
+  it('detects fit decline, business changes, and an upcoming earnings date', () => {
     const previous = snapshot('TEST')
     const current = snapshot('TEST', {
       changePercent: -8,
@@ -73,9 +73,82 @@ describe('generateWatchlistBrief', () => {
     const types = brief.deterministicInsights.map((insight) => insight.type)
 
     expect(types).toContain('fit_change')
-    expect(types).toContain('price_move')
+    expect(types).not.toContain('price_move')
     expect(types).toContain('fundamental_change')
     expect(types).toContain('earnings')
+    expect(
+      brief.deterministicInsights
+        .find((value) => value.type === 'fundamental_change')
+        ?.evidence.some((evidence) => evidence.label === 'Price context'),
+    ).toBe(true)
+  })
+
+  it('does not create an attention signal for price movement alone', () => {
+    const previous = snapshot('TEST')
+    const current = snapshot('TEST', { changePercent: -14 })
+    const item = {
+      ...createWatchlistItem(
+        current,
+        scoreSecurity(current, defaultThesis),
+      ),
+      previousSnapshot: previous,
+      previousFit: scoreSecurity(previous, defaultThesis),
+    }
+
+    const brief = generateWatchlistBrief({
+      ...emptyWatchlist,
+      items: [item],
+    })
+
+    expect(
+      brief.deterministicInsights.some(
+        (value) => value.type === 'price_move',
+      ),
+    ).toBe(false)
+  })
+
+  it('detects cash-flow, leverage, liquidity, valuation, and filing changes', () => {
+    const previous = snapshot('TEST', {
+      freeCashFlow: 1_000_000_000,
+      debtToEquity: 1,
+      currentRatio: 1.5,
+      peRatio: 20,
+      fundamentalsAsOf: '2026-03-31',
+    })
+    const current = snapshot('TEST', {
+      freeCashFlow: 500_000_000,
+      debtToEquity: 2,
+      currentRatio: 0.9,
+      peRatio: 30,
+      fundamentalsAsOf: '2026-06-30',
+    })
+    const item = {
+      ...createWatchlistItem(
+        current,
+        scoreSecurity(current, defaultThesis),
+      ),
+      previousSnapshot: previous,
+      previousFit: scoreSecurity(previous, defaultThesis),
+    }
+
+    const brief = generateWatchlistBrief({
+      ...emptyWatchlist,
+      items: [item],
+    })
+
+    expect(
+      brief.deterministicInsights.some(
+        (value) => value.type === 'fundamental_change',
+      ),
+    ).toBe(true)
+    expect(
+      brief.deterministicInsights.some(
+        (value) => value.type === 'valuation_change',
+      ),
+    ).toBe(true)
+    expect(
+      brief.deterministicInsights.some((value) => value.type === 'filing'),
+    ).toBe(true)
   })
 
   it('detects watchlist concentration', () => {

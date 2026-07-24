@@ -1,0 +1,86 @@
+import type { InvestmentThesis } from '../domain/thesis'
+
+export const discoverUniverseVersion = 1
+
+export type DiscoverUniverseSecurity = {
+  symbol: string
+  name: string
+  themes: string[]
+  styles: InvestmentThesis['style'][]
+}
+
+export const discoverUniverse: DiscoverUniverseSecurity[] = [
+  { symbol: 'AAPL', name: 'Apple', themes: ['technology', 'consumer'], styles: ['quality', 'growth'] },
+  { symbol: 'MSFT', name: 'Microsoft', themes: ['ai', 'technology'], styles: ['quality', 'growth'] },
+  { symbol: 'NVDA', name: 'NVIDIA', themes: ['ai', 'technology'], styles: ['growth', 'quality'] },
+  { symbol: 'AMD', name: 'Advanced Micro Devices', themes: ['ai', 'technology'], styles: ['growth'] },
+  { symbol: 'AVGO', name: 'Broadcom', themes: ['ai', 'technology'], styles: ['quality', 'growth', 'income'] },
+  { symbol: 'ORCL', name: 'Oracle', themes: ['ai', 'technology'], styles: ['quality', 'income'] },
+  { symbol: 'CRM', name: 'Salesforce', themes: ['ai', 'technology'], styles: ['growth', 'quality'] },
+  { symbol: 'ADBE', name: 'Adobe', themes: ['ai', 'technology'], styles: ['quality', 'growth'] },
+  { symbol: 'CSCO', name: 'Cisco Systems', themes: ['ai', 'technology'], styles: ['income', 'value'] },
+  { symbol: 'IBM', name: 'IBM', themes: ['ai', 'technology'], styles: ['income', 'value'] },
+  { symbol: 'INTC', name: 'Intel', themes: ['ai', 'technology', 'manufacturing'], styles: ['value'] },
+  { symbol: 'QCOM', name: 'Qualcomm', themes: ['ai', 'technology'], styles: ['value', 'income'] },
+  { symbol: 'AMAT', name: 'Applied Materials', themes: ['ai', 'technology', 'manufacturing'], styles: ['quality', 'growth'] },
+  { symbol: 'MU', name: 'Micron Technology', themes: ['ai', 'technology', 'manufacturing'], styles: ['growth', 'value'] },
+  { symbol: 'NOW', name: 'ServiceNow', themes: ['ai', 'technology'], styles: ['growth'] },
+  { symbol: 'PLTR', name: 'Palantir Technologies', themes: ['ai', 'technology'], styles: ['growth'] },
+  { symbol: 'GOOGL', name: 'Alphabet', themes: ['ai', 'technology'], styles: ['quality', 'growth'] },
+  { symbol: 'META', name: 'Meta Platforms', themes: ['ai', 'technology', 'consumer'], styles: ['quality', 'growth'] },
+  { symbol: 'NFLX', name: 'Netflix', themes: ['technology', 'consumer'], styles: ['growth'] },
+  { symbol: 'T', name: 'AT&T', themes: ['technology'], styles: ['income', 'value'] },
+  { symbol: 'VZ', name: 'Verizon', themes: ['technology'], styles: ['income', 'value'] },
+  { symbol: 'CAT', name: 'Caterpillar', themes: ['manufacturing'], styles: ['quality', 'income'] },
+  { symbol: 'DE', name: 'Deere', themes: ['manufacturing'], styles: ['quality', 'growth'] },
+  { symbol: 'HON', name: 'Honeywell', themes: ['manufacturing'], styles: ['quality', 'income'] },
+  { symbol: 'GE', name: 'GE Aerospace', themes: ['manufacturing'], styles: ['growth', 'quality'] },
+  { symbol: 'RTX', name: 'RTX', themes: ['manufacturing'], styles: ['quality', 'income'] },
+  { symbol: 'LMT', name: 'Lockheed Martin', themes: ['manufacturing'], styles: ['income', 'value'] },
+  { symbol: 'ETN', name: 'Eaton', themes: ['manufacturing', 'energy'], styles: ['quality', 'growth'] },
+  { symbol: 'PH', name: 'Parker-Hannifin', themes: ['manufacturing'], styles: ['quality'] },
+  { symbol: 'UNP', name: 'Union Pacific', themes: ['manufacturing'], styles: ['quality', 'income'] },
+  { symbol: 'UPS', name: 'United Parcel Service', themes: ['manufacturing'], styles: ['income', 'value'] },
+  { symbol: 'JNJ', name: 'Johnson & Johnson', themes: ['healthcare'], styles: ['quality', 'income'] },
+  { symbol: 'LLY', name: 'Eli Lilly', themes: ['healthcare'], styles: ['growth', 'quality'] },
+  { symbol: 'MRK', name: 'Merck', themes: ['healthcare'], styles: ['quality', 'income'] },
+  { symbol: 'ABBV', name: 'AbbVie', themes: ['healthcare'], styles: ['income', 'value'] },
+  { symbol: 'PFE', name: 'Pfizer', themes: ['healthcare'], styles: ['income', 'value'] },
+  { symbol: 'AMGN', name: 'Amgen', themes: ['healthcare'], styles: ['quality', 'income'] },
+  { symbol: 'GILD', name: 'Gilead Sciences', themes: ['healthcare'], styles: ['value', 'income'] },
+  { symbol: 'TMO', name: 'Thermo Fisher Scientific', themes: ['healthcare'], styles: ['quality', 'growth'] },
+  { symbol: 'ISRG', name: 'Intuitive Surgical', themes: ['healthcare', 'technology'], styles: ['growth', 'quality'] },
+  { symbol: 'UNH', name: 'UnitedHealth Group', themes: ['healthcare'], styles: ['quality', 'value'] },
+  { symbol: 'XOM', name: 'Exxon Mobil', themes: ['energy'], styles: ['income', 'value'] },
+  { symbol: 'CVX', name: 'Chevron', themes: ['energy'], styles: ['income', 'value'] },
+  { symbol: 'COP', name: 'ConocoPhillips', themes: ['energy'], styles: ['value', 'income'] },
+  { symbol: 'SLB', name: 'SLB', themes: ['energy'], styles: ['value', 'growth'] },
+  { symbol: 'EOG', name: 'EOG Resources', themes: ['energy'], styles: ['quality', 'income'] },
+  { symbol: 'NEE', name: 'NextEra Energy', themes: ['energy'], styles: ['growth', 'income'] },
+  { symbol: 'DUK', name: 'Duke Energy', themes: ['energy'], styles: ['income'] },
+  { symbol: 'AMZN', name: 'Amazon', themes: ['consumer', 'technology', 'ai'], styles: ['growth', 'quality'] },
+  { symbol: 'WMT', name: 'Walmart', themes: ['consumer'], styles: ['quality', 'income'] },
+  { symbol: 'COST', name: 'Costco Wholesale', themes: ['consumer'], styles: ['quality', 'growth'] },
+  { symbol: 'HD', name: 'Home Depot', themes: ['consumer'], styles: ['quality', 'income'] },
+  { symbol: 'LOW', name: "Lowe's", themes: ['consumer'], styles: ['quality', 'income'] },
+  { symbol: 'MCD', name: "McDonald's", themes: ['consumer'], styles: ['quality', 'income'] },
+  { symbol: 'SBUX', name: 'Starbucks', themes: ['consumer'], styles: ['growth', 'quality'] },
+  { symbol: 'NKE', name: 'Nike', themes: ['consumer'], styles: ['quality', 'value'] },
+  { symbol: 'DIS', name: 'Walt Disney', themes: ['consumer'], styles: ['growth', 'value'] },
+  { symbol: 'KO', name: 'Coca-Cola', themes: ['consumer'], styles: ['quality', 'income'] },
+  { symbol: 'PEP', name: 'PepsiCo', themes: ['consumer'], styles: ['quality', 'income'] },
+  { symbol: 'PG', name: 'Procter & Gamble', themes: ['consumer'], styles: ['quality', 'income'] },
+  { symbol: 'TSLA', name: 'Tesla', themes: ['consumer', 'technology', 'manufacturing', 'energy'], styles: ['growth'] },
+  { symbol: 'JPM', name: 'JPMorgan Chase', themes: [], styles: ['quality', 'income'] },
+  { symbol: 'BAC', name: 'Bank of America', themes: [], styles: ['value', 'income'] },
+  { symbol: 'GS', name: 'Goldman Sachs', themes: [], styles: ['value', 'income'] },
+  { symbol: 'MS', name: 'Morgan Stanley', themes: [], styles: ['value', 'income'] },
+  { symbol: 'V', name: 'Visa', themes: ['technology', 'consumer'], styles: ['quality', 'growth'] },
+  { symbol: 'MA', name: 'Mastercard', themes: ['technology', 'consumer'], styles: ['quality', 'growth'] },
+  { symbol: 'AXP', name: 'American Express', themes: ['consumer'], styles: ['quality', 'value'] },
+  { symbol: 'BRK.B', name: 'Berkshire Hathaway', themes: [], styles: ['quality', 'value'] },
+]
+
+export const discoverUniverseBySymbol = new Map(
+  discoverUniverse.map((security) => [security.symbol, security]),
+)

@@ -20,6 +20,41 @@ const addDays = (date: Date, days: number) => {
   return result
 }
 
+const changeMagnitude = (
+  current: number | null | undefined,
+  previous: number | null | undefined,
+) =>
+  current == null || previous == null ? 0 : Math.abs(current - previous)
+
+const sentimentPriority = (item: WatchlistItem) => {
+  const fitConcern =
+    item.currentFit.total == null ? 0 : Math.max(0, 60 - item.currentFit.total)
+  const previous = item.previousSnapshot
+
+  if (!previous) {
+    return fitConcern
+  }
+
+  return (
+    fitConcern +
+    changeMagnitude(
+      item.currentSnapshot.revenueGrowth,
+      previous.revenueGrowth,
+    ) *
+      100 +
+    changeMagnitude(
+      item.currentSnapshot.earningsGrowth,
+      previous.earningsGrowth,
+    ) *
+      100 +
+    changeMagnitude(
+      item.currentSnapshot.profitMargin,
+      previous.profitMargin,
+    ) *
+      100
+  )
+}
+
 const mapWithConcurrency = async <Input, Output>(
   values: Input[],
   concurrency: number,
@@ -117,11 +152,7 @@ export const reviewWatchlist = async (
   ).catch(() => new Map<string, string>())
   const sentimentCandidates = [...refreshedItems]
     .filter((item) => item.reviewError == null)
-    .sort(
-      (left, right) =>
-        Math.abs(right.currentSnapshot.changePercent ?? 0) -
-        Math.abs(left.currentSnapshot.changePercent ?? 0),
-    )
+    .sort((left, right) => sentimentPriority(right) - sentimentPriority(left))
     .slice(0, sentimentLimit)
   const sentiments = new Map(
     await mapWithConcurrency(sentimentCandidates, 2, async (item) => [

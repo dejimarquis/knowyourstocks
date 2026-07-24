@@ -44,4 +44,18 @@ describe('App', () => {
       screen.getByText(/Your saved thesis could not be read/),
     ).toBeInTheDocument()
   })
+
+  it('navigates to the manual Discover surface without spending on load', () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discover' }))
+
+    expect(
+      screen.getByRole('heading', {
+        name: 'Find the next company to research.',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Discover is locked.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Refresh ideas' })).toBeDisabled()
+  })
 })

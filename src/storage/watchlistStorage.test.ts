@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SecuritySnapshot } from '../data/alphaVantage'
 import {
   createWatchlistItem,
@@ -91,5 +91,114 @@ describe('watchlistStorage', () => {
         ),
       ),
     ).toThrow(`Watchlists are limited to ${watchlistLimit} securities.`)
+  })
+
+  it('migrates older local watchlists and fills new review fields', () => {
+    const snapshot = security(1)
+    const item = createWatchlistItem(
+      snapshot,
+      scoreSecurity(snapshot, defaultThesis),
+    )
+    window.localStorage.setItem(
+      'knowyourstocks.watchlist',
+      JSON.stringify({
+        version: 1,
+        items: [
+          {
+            ...item,
+            currentSnapshot: {
+              ...item.currentSnapshot,
+              operatingMargin: undefined,
+              freeCashFlow: undefined,
+              debtToEquity: undefined,
+              currentRatio: undefined,
+              fundamentalsAsOf: undefined,
+              metricProvenance: undefined,
+            },
+          },
+        ],
+        lastReviewAt: null,
+        lastWeeklyReviewKey: null,
+        latestBrief: {
+          generatedAt: '2026-07-23T12:00:00.000Z',
+          reviewType: 'manual',
+          deterministicInsights: [],
+          experimentalInsights: [],
+          stableSymbols: ['T1'],
+          errors: [],
+          aiSummary: null,
+          aiUncertainties: [],
+          modelStatus: 'not_requested',
+        },
+        modelPreferences: {
+          includeThesisNote: false,
+        },
+      }),
+    )
+
+    const result = loadWatchlist()
+
+    expect(result.recoveryRequired).toBe(false)
+    expect(result.watchlist.version).toBe(2)
+    expect(result.watchlist.modelPreferences.enablePhi).toBe(true)
+    expect(result.watchlist.items[0].currentSnapshot).toMatchObject({
+      operatingMargin: null,
+      freeCashFlow: null,
+      debtToEquity: null,
+      currentRatio: null,
+      fundamentalsAsOf: null,
+      metricProvenance: {},
+    })
+    expect(result.watchlist.latestBrief).toMatchObject({
+      prioritizedSignalIds: [],
+      prioritizedEvidenceIds: [],
+      aiAssessments: [],
+      crossStockPatterns: [],
+    })
+    expect(result.watchlist.insightFeedback).toEqual({})
+    expect(
+      JSON.parse(
+        window.localStorage.getItem('knowyourstocks.watchlist') ?? '{}',
+      ).version,
+    ).toBe(2)
+  })
+
+  it('still rejects malformed stored watchlists after migration', () => {
+    window.localStorage.setItem(
+      'knowyourstocks.watchlist',
+      JSON.stringify({ version: 1, items: 'not-an-array' }),
+    )
+
+    expect(loadWatchlist()).toEqual({
+      watchlist: emptyWatchlist,
+      recoveryRequired: true,
+    })
+  })
+
+  it('keeps a valid migrated watchlist when the persistence write fails', () => {
+    const snapshot = security(1)
+    const item = createWatchlistItem(
+      snapshot,
+      scoreSecurity(snapshot, defaultThesis),
+    )
+    window.localStorage.setItem(
+      'knowyourstocks.watchlist',
+      JSON.stringify({
+        ...emptyWatchlist,
+        version: 1,
+        items: [item],
+      }),
+    )
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new Error('storage full')
+      })
+
+    const result = loadWatchlist()
+
+    expect(result.recoveryRequired).toBe(false)
+    expect(result.watchlist.items).toHaveLength(1)
+    setItem.mockRestore()
   })
 })

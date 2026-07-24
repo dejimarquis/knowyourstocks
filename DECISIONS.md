@@ -1,51 +1,81 @@
 # Decision log
 
-This file records choices that are important, non-obvious, or worth revisiting after the friend beta.
+This file records current intelligence-v2 choices, tradeoffs, and deferred cleanup.
 
-## Local-first, no accounts
+## Deterministic Fit remains authoritative
 
-The thesis, watchlist, snapshots, briefs, and feedback stay in browser storage. This removes account, database, and privacy overhead for the POC, but there is no cross-device sync and clearing browser data loses the saved state.
+Fit is calculated from normalized evidence with visible factor contributions. AI has a separate thesis-evidence score and opinion. Neither score predicts returns, and AI cannot alter Fit, provider values, signal severity, candidate membership, or freshness.
 
-## Finnhub is bring-your-own-key
+This separation keeps the product explainable and ensures model failure never removes the core research result.
 
-Each user supplies a Finnhub key that is stored in `sessionStorage` and sent directly to Finnhub. This avoids centrally redistributing licensed market data and owner-funded quota, but users must obtain a key and browser storage is not an encrypted vault.
+## Finnhub fundamentals are normalized with provenance
 
-The review pipeline reserves a margin below Finnhub's free 60-request-per-minute allowance, limits sentiment checks to the three largest movers, and blocks repeated full reviews for one minute. These controls favor reliability over instant repeated refreshes.
+Finnhub `epsGrowthTTMYoy` is now the earnings-growth source. Operating margin, free cash flow, debt-to-equity, and current ratio were added. Percentage and currency-unit conversions occur in the adapter, and each available metric carries source and period metadata.
 
-## SEC EDGAR is a fundamentals fallback, not a quote provider
+SEC EDGAR remains a selective missing-fundamentals fallback. It does not overwrite available provider values or supply quotes.
 
-SEC company facts fill missing growth, margin, EPS, equity, and ROE evidence. Calculations align reporting frames where a ratio requires compatible periods. Quarterly EPS may be annualized for scoring context, but it is not converted into or presented as trailing P/E.
+## AI requires an explicit user action
 
-The managed API identifies itself to the SEC, spaces upstream requests below the fair-access threshold, retries bounded transient failures, deduplicates concurrent company requests, and limits its in-memory cache.
+Research Search/Refresh, Discover refresh, and requested Watchlist review are the only AI triggers. Loading cached Research or Discover state does not spend model quota.
 
-## Deterministic logic has authority over Phi
+Matching six-hour caches may satisfy a request after an explicit action. This preserves responsiveness without turning passive browsing into model usage.
 
-Rules calculate metrics, fit, severity, freshness, and evidence. Phi can only reorder verified signals and identify relationships supported by at least two distinct evidence IDs. User-facing pattern titles and explanations are built from allowlisted relationships and deterministic evidence rather than free model prose.
+## Discover is a manual hybrid shortlist
 
-This intentionally makes the AI less expressive than a chat assistant. The tradeoff is lower hallucination and investment-advice risk.
+Discover combines a versioned curated universe of liquid US common stocks with Finnhub peer context. Peer symbols influence priority only when they are already in the curated universe. The current and watched symbols are excluded, no more than eight candidates are fetched, and no more than five are shown.
 
-## Phi-4-mini-instruct, not a reasoning model
+ETFs are deferred from the initial universe. Deterministic Fit provides the fallback ranking whenever provider coverage is partial or model output is unavailable or invalid.
 
-Live benchmarks favored Phi-4-mini-instruct for latency, token use, and constrained-output compatibility. Phi-4-mini-reasoning consumed more tokens and was slower at the same pricing tier; larger Phi deployments timed out at the tested low capacity.
+## Watchlist attention is business-first
 
-The unused benchmark deployments remain in Azure because deleting resources is destructive. They have no idle token cost but consume quota and should be removed after review.
+The review engine emphasizes growth, margins, cash flow, leverage, liquidity, valuation, filings, earnings, thesis drift, concentration, freshness, and supported context. A daily price move is not a standalone alert; it can appear only as context on another signal.
 
-## AI enhancement defaults on with an explicit opt-out
+Every requested Phi review receives evidence for every watched stock, including stable stocks, and must return one assessment per stock. This avoids equating “no deterministic change” with “not reviewed.”
 
-The structured Phi enhancement is enabled by default to keep the POC low-friction, and users can disable it before a review. The free-text thesis note remains excluded unless separately opted in.
+## One shared grounded API protects all operations
 
-The model packet contains structured thesis preferences and deterministic signals only. It no longer includes the watchlist inventory, provider payloads, browser history, or Finnhub key.
+Research, recommendations, and Watchlist share operation-specific schemas, output normalization, evidence alias resolution, symbol attachment checks, advice and numeric-claim guards, bounded retry, six-hour process cache, process-local rate limits, timeouts, token ceilings, and deterministic fallback.
 
-## Durable model-spend stop uses Azure Table Storage
+Normalization is deliberately limited to harmless structural variants. It does not excuse unknown evidence, invented symbols, or unsupported claims.
 
-Process-local counters reset during cold starts and scale-out, so they cannot enforce a cost ceiling. A small zone-redundant Storage account now holds monthly global and daily anonymous-browser reservations in one atomic transaction. The random browser identifier is converted into a keyed hash that rotates daily; IP addresses are not stored.
+## Phi-4-mini-instruct is the single global winner
 
-Production fails closed if durable quota storage is unavailable. The default global ceiling is 1,000 model calls per month, far below the existing $25 Azure budget. The Azure budget remains an alert; the Table counter is the application-level hard stop.
+The bake-off selected `phi-4-mini-watchlist` for all three operations.
 
-Static Web Apps managed Functions on the Free plan do not provide a practical managed-identity path for this architecture. The POC therefore uses a storage connection string and Foundry key in encrypted Static Web Apps application settings. This is a deliberate compromise; a later authenticated API should use managed identity and RBAC.
+Phi-4-mini-reasoning was stronger on some Research reasoning cases, but observed chunks took roughly 39–54 seconds. It also returned malformed recommendation structures, confused evidence IDs with symbols, and had lower aggregate reliability.
+
+Phi-4-mini-instruct produced usable successful responses around 2.6–8.6 seconds and grounded recommendation and Watchlist work better, although low-capacity serverless inference still timed out intermittently.
+
+Neither model met the aspirational 95% raw-schema-validity gate. The decision is therefore contingent on mandatory normalization, strict validation, bounded retry, caching, rate limits, and deterministic fallback.
+
+## Durable Azure Table quota enforcement was removed
+
+The Azure Table SDK, quota runtime, quota Bicep module, post-provision hook, and associated hard-stop behavior were removed. The current architecture no longer stores monthly or browser counters in Azure Table Storage.
+
+The $25 Azure budget remains useful as an alert, but it is not a Foundry circuit breaker. Current controls are low model capacity, bounded tokens, six-hour caches, process-local limits, short timeouts, one transient retry, and fallback. These reduce risk but do not guarantee a fixed monthly call ceiling because processes can restart or scale.
+
+## Local-first privacy has explicit AI exceptions
+
+The thesis, watchlist, snapshots, briefs, and caches remain browser-local. The Finnhub key remains in `sessionStorage` and never enters intelligence APIs.
+
+After an explicit AI action, structured thesis fields and compact evidence are sent to Foundry. Research and Discover omit the free-text note. Watchlist includes the note only after separate opt-in. Watchlist v2 necessarily includes the watched symbols and compact current/previous evidence so every stock can be assessed.
 
 ## Azure deployment remains intentionally small
 
-The app uses one Free Azure Static Web App with managed Functions, one serverless Foundry deployment, and one tiny ZRS Storage account for quota counters. It is single-region and has no background worker, database of user data, email, push notifications, or brokerage connection.
+Keep the Azure Static Web App, Foundry account, winning `phi-4-mini-watchlist` deployment, and $25 budget alert. The selected deployment should remain low capacity during the friend beta.
 
-Accounts, cloud sync, true background alerts, centrally licensed market data, and multi-region failover are deferred until usage proves they justify their cost and complexity.
+Intelligence v2 is not considered deployed until local hands-on browser testing, automated validation, push, deployment, and live verification are complete.
+
+## Live cleanup requires a separate destructive step
+
+Current candidates:
+
+- Storage account `sthqjzjkf5lnc4k`;
+- Static Web Apps settings `INTELLIGENCE_USAGE_STORAGE_CONNECTION_STRING` and `FOUNDRY_MAX_MONTHLY_CALLS`;
+- losing deployments `phi-4-mini-reasoning-watchlist`, `phi-4-reasoning-watchlist`, and `phi-4-watchlist`.
+
+The attached monitoring/project chain may also be removable, but only after dependency verification. Do not remove any candidate until the winning deployment is live-verified and explicit destructive confirmation is obtained.
+
+## Deferred work
+
+Accounts, cross-device sync, background notifications, centrally licensed shared market data, ETF discovery, durable distributed model quotas, authenticated managed identity, and multi-region infrastructure remain deferred until usage justifies their cost and complexity.

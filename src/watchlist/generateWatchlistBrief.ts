@@ -6,9 +6,9 @@ import type {
 } from '../domain/watchlist'
 
 const fitChangeThreshold = 10
-const priceMoveThreshold = 5
 const growthChangeThreshold = 0.1
 const marginChangeThreshold = 0.05
+const valuationChangeThreshold = 0.25
 const staleDays = 5
 const staleFundamentalsDays = 180
 
@@ -21,6 +21,23 @@ const formatPercent = (value: number | null) =>
       }).format(value)
 
 const formatPoints = (value: number) => `${value > 0 ? '+' : ''}${value} points`
+
+const formatNumber = (value: number | null) =>
+  value == null
+    ? 'unavailable'
+    : new Intl.NumberFormat('en-US', {
+        maximumFractionDigits: 2,
+      }).format(value)
+
+const formatCurrency = (value: number | null) =>
+  value == null
+    ? 'unavailable'
+    : new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        notation: 'compact',
+        maximumFractionDigits: 1,
+      }).format(value)
 
 const daysBetween = (left: Date, right: Date) =>
   Math.floor(
@@ -122,25 +139,6 @@ const securityInsights = (
     })
   }
 
-  const dailyMove = item.currentSnapshot.changePercent
-
-  if (dailyMove != null && Math.abs(dailyMove) >= priceMoveThreshold) {
-    results.push({
-      symbol: item.symbol,
-      type: 'price_move',
-      severity: Math.abs(dailyMove) >= 10 ? 'attention' : 'watch',
-      title: `${item.symbol} moved ${dailyMove > 0 ? 'up' : 'down'} sharply`,
-      summary: `The latest daily move was ${dailyMove.toFixed(1)}%. Price movement alone does not change the business thesis.`,
-      evidence: [
-        {
-          label: 'Daily price change',
-          current: `${dailyMove > 0 ? '+' : ''}${dailyMove.toFixed(1)}%`,
-          previous: null,
-        },
-      ],
-    })
-  }
-
   const previousSnapshot = item.previousSnapshot
 
   if (previousSnapshot) {
@@ -150,18 +148,59 @@ const securityInsights = (
         current: item.currentSnapshot.revenueGrowth,
         previous: previousSnapshot.revenueGrowth,
         threshold: growthChangeThreshold,
+        format: formatPercent,
+      },
+      {
+        label: 'Earnings growth',
+        current: item.currentSnapshot.earningsGrowth,
+        previous: previousSnapshot.earningsGrowth,
+        threshold: growthChangeThreshold,
+        format: formatPercent,
       },
       {
         label: 'Profit margin',
         current: item.currentSnapshot.profitMargin,
         previous: previousSnapshot.profitMargin,
         threshold: marginChangeThreshold,
+        format: formatPercent,
+      },
+      {
+        label: 'Operating margin',
+        current: item.currentSnapshot.operatingMargin ?? null,
+        previous: previousSnapshot.operatingMargin ?? null,
+        threshold: marginChangeThreshold,
+        format: formatPercent,
       },
       {
         label: 'Earnings per share',
         current: item.currentSnapshot.eps,
         previous: previousSnapshot.eps,
         threshold: 0.25,
+        format: formatNumber,
+      },
+      {
+        label: 'Free cash flow',
+        current: item.currentSnapshot.freeCashFlow ?? null,
+        previous: previousSnapshot.freeCashFlow ?? null,
+        threshold: Math.max(
+          50_000_000,
+          Math.abs(previousSnapshot.freeCashFlow ?? 0) * 0.2,
+        ),
+        format: formatCurrency,
+      },
+      {
+        label: 'Debt to equity',
+        current: item.currentSnapshot.debtToEquity ?? null,
+        previous: previousSnapshot.debtToEquity ?? null,
+        threshold: 0.5,
+        format: formatNumber,
+      },
+      {
+        label: 'Current ratio',
+        current: item.currentSnapshot.currentRatio ?? null,
+        previous: previousSnapshot.currentRatio ?? null,
+        threshold: 0.3,
+        format: formatNumber,
       },
     ].filter(
       (change) =>
@@ -177,17 +216,73 @@ const securityInsights = (
         severity: 'watch',
         title: `${item.symbol} fundamentals changed`,
         summary: `${changes.map((change) => change.label).join(', ')} changed materially since the previous review.`,
-        evidence: changes.map((change) => ({
-          label: change.label,
-          current:
-            change.label === 'Earnings per share'
-              ? String(change.current)
-              : formatPercent(change.current),
-          previous:
-            change.label === 'Earnings per share'
-              ? String(change.previous)
-              : formatPercent(change.previous),
-        })),
+        evidence: [
+          ...changes.map((change) => ({
+            label: change.label,
+            current: change.format(change.current),
+            previous: change.format(change.previous),
+          })),
+          ...(item.currentSnapshot.changePercent != null &&
+          Math.abs(item.currentSnapshot.changePercent) >= 5
+            ? [
+                {
+                  label: 'Price context',
+                  current: `${item.currentSnapshot.changePercent > 0 ? '+' : ''}${item.currentSnapshot.changePercent.toFixed(1)}% on the latest market day`,
+                  previous: null,
+                },
+              ]
+            : []),
+        ],
+      })
+    }
+
+    const previousPe = previousSnapshot.peRatio
+    const currentPe = item.currentSnapshot.peRatio
+
+    if (
+      previousPe != null &&
+      previousPe > 0 &&
+      currentPe != null &&
+      currentPe > 0 &&
+      Math.abs(currentPe - previousPe) / previousPe >=
+        valuationChangeThreshold
+    ) {
+      const becameMoreExpensive = currentPe > previousPe
+      results.push({
+        symbol: item.symbol,
+        type: 'valuation_change',
+        severity: becameMoreExpensive ? 'watch' : 'informational',
+        title: `${item.symbol} valuation changed materially`,
+        summary: `Trailing P/E ${becameMoreExpensive ? 'expanded' : 'contracted'} while the underlying thesis evidence should be reviewed separately.`,
+        evidence: [
+          {
+            label: 'Trailing P/E',
+            current: currentPe.toFixed(1),
+            previous: previousPe.toFixed(1),
+          },
+        ],
+      })
+    }
+
+    if (
+      item.currentSnapshot.fundamentalsAsOf &&
+      item.currentSnapshot.fundamentalsAsOf !==
+        previousSnapshot.fundamentalsAsOf
+    ) {
+      results.push({
+        symbol: item.symbol,
+        type: 'filing',
+        severity: 'informational',
+        title: `${item.symbol} has newer fundamental data`,
+        summary:
+          'A newer reporting period or filing is now reflected in the available fundamentals.',
+        evidence: [
+          {
+            label: 'Fundamentals as of',
+            current: item.currentSnapshot.fundamentalsAsOf,
+            previous: previousSnapshot.fundamentalsAsOf ?? 'Unavailable',
+          },
+        ],
       })
     }
   }
@@ -211,6 +306,16 @@ const securityInsights = (
             current: item.earningsDate,
             previous: null,
           },
+          ...(item.currentSnapshot.changePercent != null &&
+          Math.abs(item.currentSnapshot.changePercent) >= 5
+            ? [
+                {
+                  label: 'Price context',
+                  current: `${item.currentSnapshot.changePercent > 0 ? '+' : ''}${item.currentSnapshot.changePercent.toFixed(1)}% on the latest market day`,
+                  previous: null,
+                },
+              ]
+            : []),
         ],
       })
     }
@@ -380,8 +485,12 @@ export const generateWatchlistBrief = (
     errors: watchlist.items
       .filter((item) => item.reviewError)
       .map((item) => `${item.symbol}: ${item.reviewError}`),
+    prioritizedSignalIds: [],
+    prioritizedEvidenceIds: [],
     aiSummary: null,
+    aiAssessments: [],
+    crossStockPatterns: [],
     aiUncertainties: [],
-    modelStatus: 'not_requested',
+    modelStatus: watchlist.modelPreferences.enablePhi ? 'loading' : 'disabled',
   }
 }
