@@ -50,6 +50,9 @@ describe('callGroundedModel', () => {
     it('normalizes numeric confidence and derives bounded opinions', () => {
       expect(normalizeConfidence(0.9)).toBe('high')
       expect(normalizeConfidence(65)).toBe('medium')
+      expect(normalizeConfidence('very high confidence')).toBe('high')
+      expect(normalizeConfidence('moderate')).toBe('medium')
+      expect(normalizeConfidence(undefined)).toBe('medium')
       expect(normalizeOpinion('stable fundamentals', 72)).toBe(
         'Promising but mixed',
       )

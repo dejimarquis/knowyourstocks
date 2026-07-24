@@ -270,6 +270,9 @@ export const normalizeOpinion = (value: unknown, score?: number) => {
 }
 
 export const normalizeConfidence = (value: unknown) => {
+  if (value == null || value === '') {
+    return 'medium'
+  }
   if (typeof value === 'number' || (typeof value === 'string' && value.trim())) {
     const numeric = typeof value === 'number' ? value : Number(value)
     if (Number.isFinite(numeric)) {
@@ -281,6 +284,17 @@ export const normalizeConfidence = (value: unknown) => {
     throw new Error('Model returned an unsupported confidence level.')
   }
   const normalized = value.trim().toLowerCase()
+  if (normalized.includes('high')) return 'high'
+  if (normalized.includes('medium') || normalized.includes('moderate')) {
+    return 'medium'
+  }
+  if (
+    normalized.includes('low') ||
+    normalized.includes('uncertain') ||
+    normalized.includes('limited')
+  ) {
+    return 'low'
+  }
   if (
     normalized !== 'low' &&
     normalized !== 'medium' &&
