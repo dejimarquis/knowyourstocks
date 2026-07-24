@@ -175,7 +175,7 @@ Versioned browser storage may contain:
 
 The Finnhub key stays in `sessionStorage` and goes directly to Finnhub. It must not enter the managed intelligence APIs.
 
-Structured thesis fields are sent to Foundry only after an explicit AI-triggering action. Research and Discover omit the free-text note. Watchlist includes the note only after separate opt-in. See `SECURITY.md` for packet details.
+Structured thesis fields and any non-empty free-text thesis note are sent to Foundry only after an explicit AI-triggering action. The note is included automatically to improve thesis-aware analysis; passive page loads do not send it. See `SECURITY.md` for packet details.
 
 ## Azure architecture and cost
 

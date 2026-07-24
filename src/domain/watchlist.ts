@@ -198,10 +198,9 @@ const currentWatchlistSchema = z.object({
   latestBrief: watchlistBriefSchema.nullable().default(null),
   modelPreferences: z
     .object({
-      includeThesisNote: z.boolean(),
       enablePhi: z.boolean().default(true),
     })
-    .default({ includeThesisNote: false, enablePhi: true }),
+    .default({ enablePhi: true }),
   insightFeedback: z
     .record(z.string(), z.enum(['useful', 'not_useful']))
     .default({}),
@@ -221,7 +220,6 @@ const migrateWatchlist = (value: unknown): unknown => {
     ...stored,
     version: 2,
     modelPreferences: {
-      includeThesisNote: false,
       enablePhi: true,
       ...(typeof stored.modelPreferences === 'object' &&
       stored.modelPreferences != null &&
@@ -257,7 +255,6 @@ export const emptyWatchlist: Watchlist = {
   lastWeeklyReviewKey: null,
   latestBrief: null,
   modelPreferences: {
-    includeThesisNote: false,
     enablePhi: true,
   },
   insightFeedback: {},

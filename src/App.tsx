@@ -462,15 +462,6 @@ function App() {
           />
         ) : (
           <WatchlistPanel
-            onIncludeThesisNoteChange={(includeThesisNote) =>
-              updateWatchlist({
-                ...watchlist,
-                modelPreferences: {
-                  ...watchlist.modelPreferences,
-                  includeThesisNote,
-                },
-              })
-            }
             onEnablePhiChange={(enablePhi) =>
               updateWatchlist({
                 ...watchlist,

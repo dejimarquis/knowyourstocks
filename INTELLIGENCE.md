@@ -94,7 +94,7 @@ The selection therefore reflects end-to-end reliability under the application's 
 
 Finnhub now contributes corrected `epsGrowthTTMYoy`, operating margin, free cash flow, debt-to-equity, and current ratio. Evidence includes metric-level source, as-of date when known, and period. SEC fills only supported missing values and carries filing-date provenance.
 
-Research and Discover omit the free-text thesis note. Watchlist includes it only after explicit opt-in. No operation receives the Finnhub key or raw provider payloads.
+Research, Discover, and Watchlist automatically include any non-empty free-text thesis note after the user explicitly triggers the AI operation. Passive page loads do not send it. No operation receives the Finnhub key or raw provider payloads.
 
 ## Cost and failure behavior
 

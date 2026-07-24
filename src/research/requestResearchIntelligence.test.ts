@@ -61,14 +61,14 @@ describe('research intelligence client', () => {
     vi.unstubAllGlobals()
   })
 
-  it('builds compact grounded evidence without the free-text thesis note', () => {
+  it('builds compact grounded evidence with the free-text thesis note', () => {
     const request = createResearchIntelligenceRequest(
       security,
       scoreSecurity(security, defaultThesis),
-      { ...defaultThesis, note: 'Do not share this note.' },
+      { ...defaultThesis, note: 'Use durable cash flow as my main lens.' },
     )
 
-    expect(request.thesis).not.toHaveProperty('note')
+    expect(request.thesis.note).toBe('Use durable cash flow as my main lens.')
     expect(request.evidence.length).toBeLessThanOrEqual(12)
     expect(request.evidence).toContainEqual(
       expect.objectContaining({

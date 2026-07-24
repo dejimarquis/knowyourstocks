@@ -60,7 +60,7 @@ The $25 Azure budget remains useful as an alert, but it is not a Foundry circuit
 
 The thesis, watchlist, snapshots, briefs, and caches remain browser-local. The Finnhub key remains in `sessionStorage` and never enters intelligence APIs.
 
-After an explicit AI action, structured thesis fields and compact evidence are sent to Foundry. Research and Discover omit the free-text note. Watchlist includes the note only after separate opt-in. Watchlist v2 necessarily includes the watched symbols and compact current/previous evidence so every stock can be assessed.
+After an explicit AI action, structured thesis fields, any non-empty free-text thesis note, and compact evidence are sent to Foundry. The note is included automatically because it materially improves thesis-aware analysis. Passive page loads still make no AI request. Watchlist v2 necessarily includes the watched symbols and compact current/previous evidence so every stock can be assessed.
 
 ## Azure deployment remains intentionally small
 

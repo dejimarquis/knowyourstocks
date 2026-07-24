@@ -92,7 +92,6 @@ const renderPanel = (value: Watchlist) =>
   render(
     <WatchlistPanel
       onEnablePhiChange={vi.fn()}
-      onIncludeThesisNoteChange={vi.fn()}
       onInsightFeedback={vi.fn()}
       onRemove={vi.fn()}
       onResearch={vi.fn()}

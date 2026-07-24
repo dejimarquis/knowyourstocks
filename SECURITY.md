@@ -46,7 +46,7 @@ Research sends:
 - deterministic Fit total and label;
 - compact metric and Fit evidence with source/period provenance.
 
-The free-text thesis note is not sent.
+Any non-empty free-text thesis note is sent automatically after the user explicitly searches or refreshes Research. Passive page loads do not send it.
 
 ### Discover
 
@@ -57,7 +57,7 @@ Discover sends exactly the supplied candidate set being ranked, with:
 - deterministic Fit context;
 - compact candidate evidence and selected normalized metrics.
 
-The free-text thesis note is not sent. The model cannot add a symbol outside the supplied candidates.
+Any non-empty free-text thesis note is sent automatically after the user explicitly refreshes Discover. The model cannot add a symbol outside the supplied candidates.
 
 ### Watchlist
 
@@ -69,7 +69,7 @@ Watchlist v2 sends the watched stock inventory because every requested review mu
 - freshness, earnings, concentration, signal, and supported sentiment context;
 - deterministic signals;
 - structured thesis fields;
-- the free-text thesis note only after explicit opt-in.
+- any non-empty free-text thesis note.
 
 The app does not intentionally persist raw packets or prompts server-side. The shared API keeps only a six-hour in-process cache of validated normalized responses keyed by a request hash and logs coarse status/error information.
 

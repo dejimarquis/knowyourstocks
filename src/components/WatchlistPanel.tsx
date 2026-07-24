@@ -8,7 +8,6 @@ type WatchlistPanelProps = {
   onReview: () => void
   reviewStatus: 'idle' | 'reviewing' | 'error'
   reviewError: string | null
-  onIncludeThesisNoteChange: (include: boolean) => void
   onEnablePhiChange: (enabled: boolean) => void
   onInsightFeedback: (
     insightId: string,
@@ -49,7 +48,6 @@ export function WatchlistPanel({
   onReview,
   reviewStatus,
   reviewError,
-  onIncludeThesisNoteChange,
   onEnablePhiChange,
   onInsightFeedback,
 }: WatchlistPanelProps) {
@@ -138,23 +136,6 @@ export function WatchlistPanel({
             />
             <span>Use Azure Phi to connect verified watchlist signals</span>
           </label>
-          <label className="model-note-option">
-            <input
-              checked={watchlist.modelPreferences.includeThesisNote}
-              disabled={
-                !watchlist.modelPreferences.enablePhi ||
-                reviewStatus === 'reviewing'
-              }
-              onChange={(event) =>
-                onIncludeThesisNoteChange(event.target.checked)
-              }
-              type="checkbox"
-            />
-            <span>
-              Include my free-text thesis note in the Azure Phi review
-            </span>
-          </label>
-
           <section className="watchlist-brief" aria-label="Watchlist brief">
             {brief ? (
               <>

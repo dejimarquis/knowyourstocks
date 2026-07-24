@@ -62,7 +62,6 @@ const watched = (enabled = true): Watchlist => {
     ...emptyWatchlist,
     lastReviewAt: '2026-07-23T12:00:00.000Z',
     modelPreferences: {
-      includeThesisNote: false,
       enablePhi: enabled,
     },
     items: [
@@ -154,7 +153,7 @@ describe('requestWatchlistIntelligence', () => {
     })
   })
 
-  it('omits the free-text note unless the user opts in', () => {
+  it('includes a non-empty free-text note automatically', () => {
     const watchlist = watched()
     const brief = generateWatchlistBrief(watchlist)
 
@@ -164,17 +163,14 @@ describe('requestWatchlistIntelligence', () => {
         brief,
         { ...defaultThesis, note: 'Private conviction' },
       ).thesis.note,
-    ).toBeUndefined()
+    ).toBe('Private conviction')
     expect(
       createWatchlistIntelligencePacket(
-        {
-          ...watchlist,
-          modelPreferences: { includeThesisNote: true, enablePhi: true },
-        },
+        watchlist,
         brief,
-        { ...defaultThesis, note: 'Private conviction' },
+        defaultThesis,
       ).thesis.note,
-    ).toBe('Private conviction')
+    ).toBeUndefined()
   })
 
   it('does not call Phi when model enhancement is disabled', async () => {

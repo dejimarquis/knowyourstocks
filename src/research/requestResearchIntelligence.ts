@@ -64,6 +64,7 @@ export type ResearchIntelligenceRequest = {
     horizon: string
     risk: string
     style: string
+    note?: string
   }
   deterministicFit: {
     total: number | null
@@ -184,6 +185,7 @@ export const createResearchIntelligenceRequest = (
       horizon: thesis.horizon,
       risk: thesis.risk,
       style: thesis.style,
+      ...(thesis.note.trim() ? { note: thesis.note.trim() } : {}),
     },
     deterministicFit: {
       total: fit.total,

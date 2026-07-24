@@ -324,9 +324,7 @@ export const createWatchlistIntelligencePacket = (
     horizon: thesis.horizon,
     risk: thesis.risk,
     style: thesis.style,
-    ...(watchlist.modelPreferences.includeThesisNote && thesis.note.trim()
-      ? { note: thesis.note.trim() }
-      : {}),
+    ...(thesis.note.trim() ? { note: thesis.note.trim() } : {}),
   },
   stocks: watchlist.items.map((item) => ({
     symbol: item.symbol,

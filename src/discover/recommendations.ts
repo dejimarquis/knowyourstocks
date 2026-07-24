@@ -221,6 +221,7 @@ export const requestRecommendationIntelligence = async (
         horizon: thesis.horizon,
         risk: thesis.risk,
         style: thesis.style,
+        ...(thesis.note.trim() ? { note: thesis.note.trim() } : {}),
       },
       candidates: candidates.map((candidate) => ({
         symbol: candidate.snapshot.symbol,

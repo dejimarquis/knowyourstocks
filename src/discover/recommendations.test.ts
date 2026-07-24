@@ -191,15 +191,20 @@ describe('discover recommendations', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await requestRecommendationIntelligence(defaultThesis, candidates)
+    await requestRecommendationIntelligence(
+      { ...defaultThesis, note: 'Prefer durable AI infrastructure.' },
+      candidates,
+    )
 
     const request = fetchMock.mock.calls[0][1]
     const body = JSON.parse(String(request?.body)) as {
+      thesis: { note?: string }
       candidates: Array<{ symbol: string }>
     }
     expect(body.candidates).toHaveLength(5)
     expect(body.candidates.map((candidate) => candidate.symbol)).toEqual(
       candidates.map((candidate) => candidate.snapshot.symbol),
     )
+    expect(body.thesis.note).toBe('Prefer durable AI infrastructure.')
   })
 })
