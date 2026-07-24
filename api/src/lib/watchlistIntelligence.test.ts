@@ -54,7 +54,6 @@ const request = parseIntelligenceRequest({
       ],
     },
   ],
-  stableSymbols: [],
 })
 
 describe('generateWatchlistIntelligence', () => {
@@ -93,6 +92,24 @@ describe('generateWatchlistIntelligence', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('does not call Foundry when there are no verified signals', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const stableRequest = parseIntelligenceRequest({
+      version: 1,
+      thesis: request.thesis,
+      deterministicSignals: [],
+    })
+
+    const output = await generateWatchlistIntelligence(
+      stableRequest,
+      'stable-client',
+    )
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(output.experimentalPatterns).toEqual([])
   })
 
   it('maps compact aliases back to verified signal IDs', async () => {
@@ -145,7 +162,7 @@ describe('generateWatchlistIntelligence', () => {
 
     const uniqueRequest = parseIntelligenceRequest({
       ...request,
-      stableSymbols: ['UNIQUE'],
+      thesis: { ...request.thesis, note: 'advice-language-test' },
     })
 
     await expect(
@@ -176,7 +193,7 @@ describe('generateWatchlistIntelligence', () => {
     )
     const uniqueRequest = parseIntelligenceRequest({
       ...request,
-      stableSymbols: ['SIMPLIFIED'],
+      thesis: { ...request.thesis, note: 'simplified-output-test' },
     })
 
     const output = await generateWatchlistIntelligence(
@@ -185,8 +202,51 @@ describe('generateWatchlistIntelligence', () => {
     )
 
     expect(output.prioritizedSignalIds).toEqual(['thesis_drift:CBRS:1'])
-    expect(output.experimentalPatterns[0].evidenceIds).toHaveLength(2)
-    expect(output.experimentalPatterns[0].confidence).toBe('low')
+    expect(output.experimentalPatterns).toEqual([])
+    expect(output.uncertainties).toContain(
+      'Phi returned only one relationship signal, so no cross-signal pattern was shown.',
+    )
+  })
+
+  it('rejects duplicate aliases as cross-signal evidence', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    order: ['s1'],
+                    patterns: [
+                      {
+                        evidenceIds: ['s1', 's1'],
+                        label: 'Repeated evidence',
+                        confidence: 'high',
+                      },
+                    ],
+                    uncertainties: [],
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+    const uniqueRequest = parseIntelligenceRequest({
+      ...request,
+      thesis: { ...request.thesis, note: 'duplicate-evidence-test' },
+    })
+
+    const output = await generateWatchlistIntelligence(
+      uniqueRequest,
+      'test-client-duplicate',
+    )
+
+    expect(output.experimentalPatterns).toEqual([])
   })
 
   it('normalizes Phi compact priority output', async () => {
@@ -212,7 +272,7 @@ describe('generateWatchlistIntelligence', () => {
     )
     const uniqueRequest = parseIntelligenceRequest({
       ...request,
-      stableSymbols: ['COMPACT'],
+      thesis: { ...request.thesis, note: 'compact-output-test' },
     })
 
     const output = await generateWatchlistIntelligence(

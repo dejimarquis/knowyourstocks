@@ -36,12 +36,10 @@ The watchlist, snapshots, brief, and feedback remain in browser `localStorage`.
 When a review completes, the managed API may send a compact evidence packet to Azure Foundry Phi. It contains:
 
 - structured thesis preferences;
-- watched symbols and classifications;
-- current fit labels;
 - deterministic signal titles, summaries, and evidence;
 - the free-text thesis note only when the user explicitly opts in.
 
-It does not contain the Finnhub key. The server does not persist watchlist packets or prompts. It logs only coarse status and error information.
+It does not contain the watchlist inventory, raw provider payloads, browser history, or Finnhub key. The user can disable Phi enhancement before a review. The server does not persist watchlist packets or prompts. It logs only coarse status and error information.
 
 Phi output is treated as untrusted:
 
@@ -50,3 +48,9 @@ Phi output is treated as untrusted:
 - unknown evidence and prohibited trade-advice language are rejected;
 - model failures fall back to the deterministic brief;
 - model calls time out and cannot block the initial watchlist result.
+
+## Server-side credentials and quota state
+
+Azure Static Web Apps application settings contain the Foundry key and the connection string for a dedicated quota-only Storage account. These values are not sent to the browser or committed to the repository.
+
+The Storage account contains only monthly global and daily anonymous-browser call counters. The browser identifier is random, then converted server-side into a keyed hash that rotates daily. It does not contain IP addresses, symbols, thesis text, watchlists, prompts, model output, market data, or Finnhub keys. One atomic transaction reserves both counters, enforcing the model-call ceiling across Function cold starts and scale-out. Production fails closed if durable quota storage is not configured.

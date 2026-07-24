@@ -10,6 +10,7 @@ const priceMoveThreshold = 5
 const growthChangeThreshold = 0.1
 const marginChangeThreshold = 0.05
 const staleDays = 5
+const staleFundamentalsDays = 180
 
 const formatPercent = (value: number | null) =>
   value == null
@@ -69,6 +70,35 @@ const securityInsights = (
         ],
       })
     }
+  } else if (
+    item.previousFit &&
+    item.previousFit.label !== item.currentFit.label
+  ) {
+    const coverageLost = currentFit == null
+    results.push({
+      symbol: item.symbol,
+      type: 'fit_change',
+      severity: coverageLost ? 'watch' : 'informational',
+      title: coverageLost
+        ? `${item.symbol} fit coverage weakened`
+        : `${item.symbol} fit coverage improved`,
+      summary: coverageLost
+        ? 'The current data no longer supports a complete thesis-fit score.'
+        : `New data now supports a ${currentFit}-point thesis-fit score.`,
+      evidence: [
+        {
+          label: 'Thesis fit',
+          current:
+            currentFit == null
+              ? item.currentFit.label
+              : `${currentFit} · ${item.currentFit.label}`,
+          previous:
+            previousFit == null
+              ? item.previousFit.label
+              : `${previousFit} · ${item.previousFit.label}`,
+        },
+      ],
+    })
   }
 
   if (currentFit != null && currentFit < 55) {
@@ -191,8 +221,19 @@ const securityInsights = (
     daysBetween(
       new Date(`${item.currentSnapshot.latestTradingDay}T00:00:00Z`),
       now,
-    ) > staleDays
+    ) > staleDays ||
+    (item.currentSnapshot.fundamentalsAsOf != null &&
+      daysBetween(
+        new Date(`${item.currentSnapshot.fundamentalsAsOf}T00:00:00Z`),
+        now,
+      ) > staleFundamentalsDays)
   ) {
+    const staleFundamentals =
+      item.currentSnapshot.fundamentalsAsOf != null &&
+      daysBetween(
+        new Date(`${item.currentSnapshot.fundamentalsAsOf}T00:00:00Z`),
+        now,
+      ) > staleFundamentalsDays
     results.push({
       symbol: item.symbol,
       type: 'stale_data',
@@ -200,11 +241,15 @@ const securityInsights = (
       title: `${item.symbol} data needs attention`,
       summary:
         item.reviewError ??
-        `The latest market date is ${item.currentSnapshot.latestTradingDay}.`,
+        (staleFundamentals
+          ? `The latest known fundamentals are from ${item.currentSnapshot.fundamentalsAsOf}.`
+          : `The latest market date is ${item.currentSnapshot.latestTradingDay}.`),
       evidence: [
         {
           label: 'Data freshness',
-          current: item.currentSnapshot.latestTradingDay,
+          current: staleFundamentals
+            ? `Fundamentals ${item.currentSnapshot.fundamentalsAsOf}`
+            : `Market ${item.currentSnapshot.latestTradingDay}`,
           previous: null,
         },
       ],

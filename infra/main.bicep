@@ -23,6 +23,17 @@ module web './modules/static-web-app.bicep' = {
   }
 }
 
+module intelligenceStorage './modules/intelligence-storage.bicep' = {
+  name: 'intelligence-storage'
+  scope: resourceGroup
+  params: {
+    environmentName: environmentName
+    location: location
+    tags: tags
+  }
+}
+
 output AZURE_RESOURCE_GROUP string = resourceGroup.name
 output WEB_URL string = web.outputs.webUrl
 output STATIC_WEB_APP_NAME string = web.outputs.name
+output INTELLIGENCE_STORAGE_ACCOUNT_NAME string = intelligenceStorage.outputs.name

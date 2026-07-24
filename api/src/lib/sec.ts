@@ -2,6 +2,8 @@ const tickerIndexUrl = 'https://www.sec.gov/files/company_tickers.json'
 const companyFactsUrl = 'https://data.sec.gov/api/xbrl/companyfacts'
 const cacheLifetimeMs = 60 * 60 * 1000
 const tickerCacheLifetimeMs = 24 * 60 * 60 * 1000
+const requestSpacingMs = 125
+const maxCompanyFactsCacheEntries = 200
 
 type TickerRecord = {
   cik_str: number
@@ -16,6 +18,7 @@ type SecFact = {
   form: string
   filed: string
   frame?: string
+  conceptPriority?: number
 }
 
 type CompanyFacts = {
@@ -57,22 +60,64 @@ const companyFactsCache = new Map<
   string,
   { expiresAt: number; value: CompanyFacts }
 >()
+const companyFactsRequests = new Map<string, Promise<CompanyFacts>>()
+let nextSecRequestAt = 0
+let secRequestQueue = Promise.resolve()
+
+const waitForSecRequestSlot = () => {
+  const slot = secRequestQueue.then(async () => {
+    const delay = Math.max(0, nextSecRequestAt - Date.now())
+
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+
+    nextSecRequestAt = Date.now() + requestSpacingMs
+  })
+  secRequestQueue = slot.catch(() => undefined)
+  return slot
+}
+
+const retryDelay = (response: Response, attempt: number) => {
+  const retryAfter = Number(response.headers.get('Retry-After'))
+  return Number.isFinite(retryAfter) && retryAfter > 0
+    ? retryAfter * 1000
+    : 1000 * 2 ** attempt
+}
 
 const fetchJson = async <T>(url: string): Promise<T> => {
   const userAgent =
     process.env.SEC_USER_AGENT ?? 'KnowYourStocks contact@knowyourstocks.app'
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': userAgent,
-      Accept: 'application/json',
-    },
-  })
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await waitForSecRequestSlot()
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(12_000),
+      headers: {
+        'User-Agent': userAgent,
+        Accept: 'application/json',
+      },
+    })
 
-  if (!response.ok) {
+    if (response.ok) {
+      return (await response.json()) as T
+    }
+
+    if (
+      attempt < 2 &&
+      (response.status === 403 ||
+        response.status === 429 ||
+        response.status >= 500)
+    ) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, retryDelay(response, attempt)),
+      )
+      continue
+    }
+
     throw new Error(`SEC returned HTTP ${response.status} for ${url}.`)
   }
 
-  return (await response.json()) as T
+  throw new Error(`SEC request failed for ${url}.`)
 }
 
 const getTickerRecords = async (): Promise<Map<string, TickerRecord>> => {
@@ -98,31 +143,47 @@ const getCompanyFacts = async (cik: string): Promise<CompanyFacts> => {
     return cached.value
   }
 
-  const value = await fetchJson<CompanyFacts>(
+  const inFlight = companyFactsRequests.get(cik)
+
+  if (inFlight) {
+    return inFlight
+  }
+
+  const request = fetchJson<CompanyFacts>(
     `${companyFactsUrl}/CIK${cik}.json`,
-  )
-  companyFactsCache.set(cik, {
-    expiresAt: Date.now() + cacheLifetimeMs,
-    value,
+  ).then((value) => {
+    if (companyFactsCache.size >= maxCompanyFactsCacheEntries) {
+      const oldestKey = companyFactsCache.keys().next().value
+
+      if (oldestKey) {
+        companyFactsCache.delete(oldestKey)
+      }
+    }
+    companyFactsCache.set(cik, {
+      expiresAt: Date.now() + cacheLifetimeMs,
+      value,
+    })
+    return value
   })
-  return value
+  companyFactsRequests.set(cik, request)
+
+  try {
+    return await request
+  } finally {
+    companyFactsRequests.delete(cik)
+  }
 }
 
 const getUnitFacts = (
   companyFacts: CompanyFacts,
   conceptNames: string[],
   unit: string,
-): SecFact[] => {
-  for (const conceptName of conceptNames) {
-    const facts = companyFacts.facts['us-gaap']?.[conceptName]?.units?.[unit]
-
-    if (facts?.length) {
-      return facts
-    }
-  }
-
-  return []
-}
+): SecFact[] =>
+  conceptNames.flatMap((conceptName, conceptPriority) =>
+    (
+      companyFacts.facts['us-gaap']?.[conceptName]?.units?.[unit] ?? []
+    ).map((fact) => ({ ...fact, conceptPriority })),
+  )
 
 const supportedForms = new Set(['10-Q', '10-K', '20-F', '40-F'])
 
@@ -130,7 +191,8 @@ const sortFacts = (facts: SecFact[]) =>
   [...facts].sort(
     (left, right) =>
       left.end.localeCompare(right.end) ||
-      left.filed.localeCompare(right.filed),
+      left.filed.localeCompare(right.filed) ||
+      (right.conceptPriority ?? 0) - (left.conceptPriority ?? 0),
   )
 
 const latestFramedFact = (facts: SecFact[]) => {
@@ -173,6 +235,27 @@ const latestInstantFact = (facts: SecFact[]) =>
       (fact) => supportedForms.has(fact.form) && !fact.start && fact.end,
     ),
   ).at(-1) ?? null
+
+const framedFact = (facts: SecFact[], frame: string | undefined) =>
+  frame
+    ? sortFacts(
+        facts.filter(
+          (fact) => supportedForms.has(fact.form) && fact.frame === frame,
+        ),
+      ).at(-1) ?? null
+    : null
+
+const latestInstantFactAtOrBefore = (facts: SecFact[], end: string | undefined) =>
+  end
+    ? sortFacts(
+        facts.filter(
+          (fact) =>
+            supportedForms.has(fact.form) &&
+            !fact.start &&
+            fact.end <= end,
+        ),
+      ).at(-1) ?? null
+    : latestInstantFact(facts)
 
 const growthRate = (current: number | null, prior: number | null) => {
   if (current == null || prior == null || prior === 0) {
@@ -242,16 +325,25 @@ export const deriveSecFundamentals = (
 
   const revenueFact = latestFramedFact(revenueFacts)
   const priorRevenueFact = priorComparableFact(revenueFacts, revenueFact)
-  const netIncomeFact = latestFramedFact(netIncomeFacts)
+  const netIncomeFact =
+    framedFact(netIncomeFacts, revenueFact?.frame) ??
+    latestFramedFact(netIncomeFacts)
   const priorNetIncomeFact = priorComparableFact(netIncomeFacts, netIncomeFact)
-  const epsFact = latestFramedFact(epsFacts)
-  const equityFact = latestInstantFact(equityFacts)
+  const epsFact =
+    framedFact(epsFacts, revenueFact?.frame) ?? latestFramedFact(epsFacts)
+  const equityFact = latestInstantFactAtOrBefore(
+    equityFacts,
+    revenueFact?.end,
+  )
 
   const revenue = revenueFact?.val ?? null
   const netIncome = netIncomeFact?.val ?? null
   const equity = equityFact?.val ?? null
   const profitMargin =
-    revenue != null && netIncome != null && revenue !== 0
+    revenue != null &&
+    netIncome != null &&
+    revenue !== 0 &&
+    revenueFact?.frame === netIncomeFact?.frame
       ? netIncome / revenue
       : null
   const annualizedIncome = annualize(netIncome, netIncomeFact)

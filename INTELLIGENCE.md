@@ -41,7 +41,9 @@ The model call:
 - has a server timeout;
 - is schema-validated;
 - rejects unknown evidence IDs;
-- rejects prohibited buy/sell/hold language;
+- requires at least two distinct verified signals for a relationship;
+- uses deterministic, allowlisted relationship titles;
+- rejects trade instructions, price targets, guarantees, and related advice language;
 - falls back without changing the deterministic brief.
 
 ## Cost controls
@@ -51,11 +53,15 @@ The model call:
 - compact evidence packet;
 - short output budget;
 - identical-packet response cache;
-- daily global and anonymous-client request limits;
+- durable monthly global and daily anonymous-client reservations in Azure Table Storage;
+- a default hard ceiling of 1,000 model calls per month;
+- an Azure $25 monthly budget alert as an independent backstop;
 - Phi serverless inference with no idle GPU cost.
 
 ## Privacy
 
-The free-text thesis note is excluded by default. The user must explicitly enable sharing it with the Azure Phi review.
+Phi enhancement can be disabled before a review. The free-text thesis note is excluded by default and requires a separate explicit opt-in.
 
 Finnhub credentials never enter the intelligence endpoint.
+
+The intelligence packet contains structured thesis preferences and deterministic signal evidence. It does not include the watchlist inventory or raw provider responses.

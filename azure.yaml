@@ -8,3 +8,8 @@ services:
     language: js
     host: staticwebapp
     dist: dist
+
+hooks:
+  postprovision:
+    shell: sh
+    run: ./scripts/configure-intelligence-quota.sh

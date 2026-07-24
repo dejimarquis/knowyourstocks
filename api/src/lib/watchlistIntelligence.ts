@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
+import { reserveIntelligenceQuota } from './intelligenceQuota'
 
 const evidenceSchema = z.object({
   label: z.string().max(120),
@@ -17,15 +18,6 @@ const signalSchema = z.object({
   evidence: z.array(evidenceSchema).max(8),
 })
 
-const watchlistItemSchema = z.object({
-  symbol: z.string().max(12),
-  name: z.string().max(160),
-  sector: z.string().max(120).nullable(),
-  industry: z.string().max(120).nullable(),
-  fit: z.number().min(0).max(100).nullable(),
-  fitLabel: z.string().max(60),
-})
-
 const requestSchema = z.object({
   version: z.literal(1),
   thesis: z.object({
@@ -35,9 +27,7 @@ const requestSchema = z.object({
     style: z.string().max(40),
     note: z.string().max(500).optional(),
   }),
-  watchlist: z.array(watchlistItemSchema).min(1).max(25),
   deterministicSignals: z.array(signalSchema).max(75),
-  stableSymbols: z.array(z.string().max(12)).max(25),
 })
 
 const patternSchema = z.object({
@@ -86,7 +76,8 @@ const modelSelectionSchema = z.union([
 export type WatchlistIntelligenceRequest = z.infer<typeof requestSchema>
 export type WatchlistIntelligenceOutput = z.infer<typeof modelOutputSchema>
 
-const prohibitedAdvice = /\b(buy|sell|hold|short|strong buy|strong sell)\b/i
+const prohibitedAdvice =
+  /\b(buy|sell|hold|short|purchase|exit|overweight|underweight|avoid|go\s+long|price\s+target|target\s+price|guarante(?:e|ed|es)|risk[-\s]?free)\b/i
 const cacheLifetimeMs = 6 * 60 * 60 * 1000
 const dailyWindowMs = 24 * 60 * 60 * 1000
 
@@ -98,12 +89,24 @@ let globalWindowStartedAt = Date.now()
 let globalCalls = 0
 const clientCalls = new Map<string, { windowStartedAt: number; count: number }>()
 
+const positiveInteger = (value: string | undefined, fallback: number) => {
+  const parsed = Number(value)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
 const getSettings = () => ({
   endpoint: process.env.FOUNDRY_OPENAI_ENDPOINT,
   key: process.env.FOUNDRY_API_KEY,
   deployment: process.env.FOUNDRY_DEPLOYMENT ?? 'phi-4-mini-watchlist',
-  maxDailyCalls: Number(process.env.FOUNDRY_MAX_DAILY_CALLS ?? 500),
-  maxClientDailyCalls: Number(process.env.FOUNDRY_MAX_CLIENT_DAILY_CALLS ?? 10),
+  maxDailyCalls: positiveInteger(process.env.FOUNDRY_MAX_DAILY_CALLS, 500),
+  maxClientDailyCalls: positiveInteger(
+    process.env.FOUNDRY_MAX_CLIENT_DAILY_CALLS,
+    10,
+  ),
+  maxMonthlyCalls: positiveInteger(
+    process.env.FOUNDRY_MAX_MONTHLY_CALLS,
+    1000,
+  ),
 })
 
 const rateLimit = (clientId: string) => {
@@ -163,7 +166,6 @@ Risk: ${packet.thesis.risk}
 Style: ${packet.thesis.style}
 ${packet.thesis.note ? `Optional thesis note: ${packet.thesis.note}\n` : ''}Signals:
 ${signalLines.join('\n')}
-Stable: ${packet.stableSymbols.join(', ') || 'none'}
 Select the priority order and any cross-signal patterns.`,
         },
       ],
@@ -222,66 +224,58 @@ const selectionToOutput = (
           : [...aliases.entries()].find(([, id]) =>
               id.includes(selection.value),
             )?.[0]
-        const selectedId = selectedAlias
-          ? aliases.get(selectedAlias)
-          : undefined
-        const selectedSignal = selectedId
-          ? signalsById.get(selectedId)
-          : undefined
-        const relatedAlias = selectedSignal
-          ? [...aliases.entries()].find(([alias, id]) => {
-              if (alias === selectedAlias) {
-                return false
-              }
-
-              const signal = signalsById.get(id)
-              return (
-                signal?.symbol === selectedSignal.symbol ||
-                signal?.type === 'concentration'
-              )
-            })?.[0]
-          : undefined
-        const evidenceIds = [selectedAlias, relatedAlias].filter(
-          (value): value is string => Boolean(value),
-        )
-
         return {
           order: selectedAlias ? [selectedAlias] : [],
-          patterns:
-            evidenceIds.length >= 2
-              ? [
-                  {
-                    evidenceIds,
-                    label: selection.relationship
-                      .replaceAll('_', ' ')
-                      .replace(/\b\w/g, (value) => value.toUpperCase()),
-                    confidence: 'low' as const,
-                  },
-                ]
-              : [],
+          patterns: [],
           uncertainties: [
-            'Phi returned a simplified relationship, so confidence was reduced.',
+            'Phi returned only one relationship signal, so no cross-signal pattern was shown.',
           ],
         }
         })()
-  const prioritizedSignalIds = normalizedSelection.order
-    .map((alias) => aliases.get(alias))
-    .filter((id): id is string => id != null)
-  const experimentalPatterns = normalizedSelection.patterns.map((pattern) => {
-    const evidenceIds = pattern.evidenceIds
-      .map((alias) => aliases.get(alias))
-      .filter((id): id is string => id != null)
+  const prioritizedSignalIds = [
+    ...new Set(
+      normalizedSelection.order
+        .map((alias) => aliases.get(alias))
+        .filter((id): id is string => id != null),
+    ),
+  ]
+  const experimentalPatterns = normalizedSelection.patterns.flatMap((pattern) => {
+    if (prohibitedAdvice.test(pattern.label)) {
+      throw new Error('Model returned prohibited investment advice language.')
+    }
+
+    const evidenceIds = [
+      ...new Set(
+        pattern.evidenceIds
+          .map((alias) => aliases.get(alias))
+          .filter((id): id is string => id != null),
+      ),
+    ]
+
+    if (evidenceIds.length < 2) {
+      return []
+    }
+
     const evidence = evidenceIds
       .map((id) => signalsById.get(id))
       .filter((signal): signal is z.infer<typeof signalSchema> => signal != null)
+    const types = new Set(evidence.map((signal) => signal.type))
+    const title =
+      types.has('concentration')
+        ? 'Concentration may amplify another watchlist change'
+        : types.has('thesis_drift') && types.has('fundamental_change')
+          ? 'Thesis fit and fundamentals changed together'
+          : types.has('price_move') && types.has('earnings')
+            ? 'Price movement is occurring near an earnings event'
+            : 'Multiple verified watchlist signals may be connected'
 
-    return {
-      title: pattern.label,
+    return [{
+      title,
       explanation: evidence.map((signal) => signal.summary).join(' '),
       evidenceIds,
       confidence: pattern.confidence,
       thesisRelationship: `This pattern may matter to the ${packet.thesis.style} style and ${packet.thesis.horizon} horizon in the supplied thesis.`,
-    }
+    }]
   })
 
   return {
@@ -314,6 +308,9 @@ const validateOutput = (
     if (pattern.evidenceIds.some((signalId) => !evidenceIds.has(signalId))) {
       throw new Error('Model returned an unknown pattern evidence ID.')
     }
+    if (new Set(pattern.evidenceIds).size < 2) {
+      throw new Error('Model returned insufficient distinct pattern evidence.')
+    }
   })
 
   const narratives = [
@@ -341,6 +338,15 @@ export const generateWatchlistIntelligence = async (
   request: WatchlistIntelligenceRequest,
   clientId: string,
 ): Promise<WatchlistIntelligenceOutput> => {
+  if (request.deterministicSignals.length === 0) {
+    return {
+      prioritizedSignalIds: [],
+      summary: 'No verified watchlist changes need model prioritization.',
+      experimentalPatterns: [],
+      uncertainties: [],
+    }
+  }
+
   const settings = getSettings()
 
   if (!settings.endpoint || !settings.key) {
@@ -357,6 +363,11 @@ export const generateWatchlistIntelligence = async (
   }
 
   rateLimit(clientId)
+  await reserveIntelligenceQuota(
+    clientId,
+    settings.maxMonthlyCalls,
+    settings.maxClientDailyCalls,
+  )
 
   const generation = prompt(request)
   const url = `${settings.endpoint.replace(/\/$/, '')}/openai/deployments/${encodeURIComponent(settings.deployment)}/chat/completions?api-version=2024-10-21`

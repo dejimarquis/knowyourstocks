@@ -19,6 +19,7 @@ const cacheLifetimeMs = 6 * 60 * 60 * 1000
 type SecurityLookupProps = {
   thesis: InvestmentThesis
   watchedSymbols: Set<string>
+  watchlistLocked: boolean
   onToggleWatch: (security: SecuritySnapshot, fit: FitScore) => void
 }
 
@@ -149,6 +150,7 @@ const formatDate = (value: string) =>
 export function SecurityLookup({
   thesis,
   watchedSymbols,
+  watchlistLocked,
   onToggleWatch,
 }: SecurityLookupProps) {
   const [apiKey, setApiKey] = useState(loadFinnhubKey)
@@ -161,6 +163,7 @@ export function SecurityLookup({
     'idle' | 'loading' | 'success' | 'error'
   >('idle')
   const [error, setError] = useState<string | null>(null)
+  const [dataAccessOpen, setDataAccessOpen] = useState(false)
 
   const fit = useMemo(
     () => (security ? scoreSecurity(security, thesis) : null),
@@ -186,6 +189,7 @@ export function SecurityLookup({
 
     if (!personalKey && symbol.trim().toUpperCase() !== 'IBM') {
       setStatus('error')
+      setDataAccessOpen(true)
       setError(
         'The free demo supports IBM only. Open Data access to use another company.',
       )
@@ -229,7 +233,6 @@ export function SecurityLookup({
         <label>
           <span>Company or ticker</span>
           <input
-            aria-label="Ticker symbol"
             autoComplete="off"
             maxLength={80}
             onChange={(event) => setSymbol(event.target.value)}
@@ -246,7 +249,11 @@ export function SecurityLookup({
         </button>
       </form>
 
-      <details className="data-access">
+      <details
+        className="data-access"
+        onToggle={(event) => setDataAccessOpen(event.currentTarget.open)}
+        open={dataAccessOpen}
+      >
         <summary>Data access</summary>
         <label>
           <span>Free Finnhub key</span>
@@ -386,10 +393,15 @@ export function SecurityLookup({
             <div className="result-actions">
               <button
                 className={isWatched ? 'watch-action watched' : 'watch-action'}
+                disabled={watchlistLocked}
                 onClick={() => onToggleWatch(security, fit)}
                 type="button"
               >
-                {isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
+                {watchlistLocked
+                  ? 'Watchlist review in progress'
+                  : isWatched
+                    ? 'Remove from watchlist'
+                    : 'Add to watchlist'}
               </button>
             </div>
           </article>

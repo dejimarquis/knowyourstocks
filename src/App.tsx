@@ -149,7 +149,6 @@ function App() {
           : reviewedWatchlist.lastWeeklyReviewKey,
       }
       updateWatchlist(reviewedWithBrief)
-      setReviewStatus('idle')
 
       void requestWatchlistIntelligence(
         reviewedWithBrief,
@@ -157,7 +156,10 @@ function App() {
         thesis,
       ).then((intelligenceBrief) => {
         setWatchlist((current) => {
-          if (current.lastReviewAt !== reviewedWithBrief.lastReviewAt) {
+          if (
+            current.lastReviewAt !== reviewedWithBrief.lastReviewAt ||
+            !current.modelPreferences.enablePhi
+          ) {
             return current
           }
 
@@ -168,7 +170,7 @@ function App() {
           saveWatchlist(completedWatchlist)
           return completedWatchlist
         })
-      })
+      }).finally(() => setReviewStatus('idle'))
     } catch (error) {
       setReviewStatus('error')
       setReviewError(
@@ -221,6 +223,7 @@ function App() {
             <SecurityLookup
               onToggleWatch={handleToggleWatch}
               thesis={thesis}
+              watchlistLocked={reviewStatus === 'reviewing'}
               watchedSymbols={watchedSymbols}
             />
 
@@ -336,10 +339,9 @@ function App() {
               </label>
             </div>
 
-            <label className="note-field" htmlFor="thesis-note">
-              <span>What do you believe?</span>
+            <div className="note-field">
+              <label htmlFor="thesis-note">What do you believe?</label>
               <textarea
-                aria-label="What do you believe?"
                 id="thesis-note"
                 maxLength={500}
                 onChange={(event) =>
@@ -353,7 +355,7 @@ function App() {
                 value={thesis.note}
               />
               <span className="character-count">{thesis.note.length}/500</span>
-            </label>
+            </div>
 
             <div className="form-actions">
               <button className="primary-action" type="submit">
@@ -425,7 +427,19 @@ function App() {
             onIncludeThesisNoteChange={(includeThesisNote) =>
               updateWatchlist({
                 ...watchlist,
-                modelPreferences: { includeThesisNote },
+                modelPreferences: {
+                  ...watchlist.modelPreferences,
+                  includeThesisNote,
+                },
+              })
+            }
+            onEnablePhiChange={(enablePhi) =>
+              updateWatchlist({
+                ...watchlist,
+                modelPreferences: {
+                  ...watchlist.modelPreferences,
+                  enablePhi,
+                },
               })
             }
             onInsightFeedback={(insightId, value) =>

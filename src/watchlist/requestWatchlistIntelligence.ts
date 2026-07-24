@@ -50,14 +50,6 @@ const packet = (
       ? { note: thesis.note.trim() }
       : {}),
   },
-  watchlist: watchlist.items.map((item) => ({
-    symbol: item.symbol,
-    name: item.name,
-    sector: item.currentSnapshot.sector,
-    industry: item.currentSnapshot.industry,
-    fit: item.currentFit.total,
-    fitLabel: item.currentFit.label,
-  })),
   deterministicSignals: brief.deterministicInsights.map((insight) => ({
     id: insight.id,
     symbol: insight.symbol,
@@ -67,7 +59,6 @@ const packet = (
     summary: insight.summary,
     evidence: insight.evidence,
   })),
-  stableSymbols: brief.stableSymbols,
 })
 
 const patternToInsight = (
@@ -98,6 +89,19 @@ export const requestWatchlistIntelligence = async (
   brief: WatchlistBrief,
   thesis: InvestmentThesis,
 ): Promise<WatchlistBrief> => {
+  if (
+    !watchlist.modelPreferences.enablePhi ||
+    brief.deterministicInsights.length === 0
+  ) {
+    return {
+      ...brief,
+      experimentalInsights: [],
+      aiSummary: null,
+      aiUncertainties: [],
+      modelStatus: 'not_requested',
+    }
+  }
+
   try {
     const response = await fetch('/api/watchlist-intelligence', {
       method: 'POST',

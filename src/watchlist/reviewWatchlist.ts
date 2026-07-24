@@ -9,7 +9,8 @@ import type { Watchlist, WatchlistItem } from '../domain/watchlist'
 import { scoreSecurity } from '../scoring/scoreSecurity'
 
 const reviewConcurrency = 3
-const sentimentLimit = 5
+const sentimentLimit = 3
+const reviewCooldownMs = 60_000
 
 const dateOnly = (date: Date) => date.toISOString().slice(0, 10)
 
@@ -90,6 +91,15 @@ export const reviewWatchlist = async (
 
   if (watchlist.items.length === 0) {
     return watchlist
+  }
+
+  if (
+    watchlist.lastReviewAt &&
+    now.getTime() - new Date(watchlist.lastReviewAt).getTime() < reviewCooldownMs
+  ) {
+    throw new Error(
+      'Finnhub limits free requests. Wait one minute between full watchlist reviews.',
+    )
   }
 
   const reviewedAt = now.toISOString()

@@ -111,4 +111,50 @@ describe('generateWatchlistBrief', () => {
       ),
     ).toBe(false)
   })
+
+  it('surfaces lost fit coverage and stale fundamentals', () => {
+    const previous = snapshot('TEST')
+    const current = snapshot('TEST', {
+      fundamentalsAsOf: '2025-01-01',
+      marketCap: null,
+      peRatio: null,
+      eps: null,
+      profitMargin: null,
+      returnOnEquity: null,
+      revenueGrowth: null,
+      earningsGrowth: null,
+      beta: null,
+    })
+    const item = {
+      ...createWatchlistItem(
+        current,
+        scoreSecurity(current, defaultThesis),
+      ),
+      previousSnapshot: previous,
+      previousFit: scoreSecurity(previous, defaultThesis),
+    }
+
+    const brief = generateWatchlistBrief(
+      {
+        ...emptyWatchlist,
+        items: [item],
+      },
+      new Date('2026-07-23T00:00:00Z'),
+    )
+
+    expect(
+      brief.deterministicInsights.some(
+        (value) =>
+          value.type === 'fit_change' &&
+          value.title.includes('coverage weakened'),
+      ),
+    ).toBe(true)
+    expect(
+      brief.deterministicInsights.some(
+        (value) =>
+          value.type === 'stale_data' &&
+          value.summary.includes('fundamentals'),
+      ),
+    ).toBe(true)
+  })
 })

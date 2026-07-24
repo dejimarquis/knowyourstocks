@@ -107,7 +107,7 @@ test('uses SEC filings when Finnhub fundamentals are incomplete', async ({
   await page.goto('/')
   await page.getByText('Data access').click()
   await page.getByLabel('Free Finnhub key').fill('personal-key')
-  await page.getByLabel('Ticker symbol').fill('CBRS')
+  await page.getByLabel('Company or ticker').fill('CBRS')
   await page.getByRole('button', { name: 'Search', exact: true }).click()
 
   await expect(

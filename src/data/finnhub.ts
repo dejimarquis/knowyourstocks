@@ -2,6 +2,28 @@ import { z } from 'zod'
 import type { SecuritySnapshot } from './alphaVantage'
 
 const apiUrl = 'https://finnhub.io/api/v1'
+const requestWindowMs = 60_000
+const maxRequestsPerWindow = 58
+const requestTimestamps: number[] = []
+
+const reserveRequestSlot = async (): Promise<void> => {
+  const now = Date.now()
+
+  while (
+    requestTimestamps.length > 0 &&
+    now - requestTimestamps[0] >= requestWindowMs
+  ) {
+    requestTimestamps.shift()
+  }
+
+  if (requestTimestamps.length >= maxRequestsPerWindow) {
+    const delay = requestWindowMs - (now - requestTimestamps[0]) + 50
+    await new Promise((resolve) => setTimeout(resolve, delay))
+    return reserveRequestSlot()
+  }
+
+  requestTimestamps.push(Date.now())
+}
 
 const quoteSchema = z.object({
   c: z.number(),
@@ -90,9 +112,15 @@ const request = async (
     url.searchParams.set(key, value)
   })
 
-  const response = await fetch(url)
+  await reserveRequestSlot()
+  const response = await fetch(url, {
+    signal: AbortSignal.timeout(10_000),
+  })
 
   if (!response.ok) {
+    if (response.status === 429) {
+      throw new Error('Finnhub rate limit reached. Wait a minute and try again.')
+    }
     throw new Error(`Finnhub returned HTTP ${response.status}.`)
   }
 
@@ -218,6 +246,7 @@ export const fetchFinnhubSecurity = async (
     beta: metrics.beta ?? null,
     week52High: metrics['52WeekHigh'] ?? null,
     week52Low: metrics['52WeekLow'] ?? null,
+    fundamentalsAsOf: null,
     source: 'Finnhub',
   }
 }

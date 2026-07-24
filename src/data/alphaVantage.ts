@@ -26,6 +26,7 @@ const overviewResponseSchema = z
     ReturnOnEquityTTM: z.string().optional(),
     QuarterlyRevenueGrowthYOY: z.string().optional(),
     QuarterlyEarningsGrowthYOY: z.string().optional(),
+    LatestQuarter: z.string().optional(),
     Beta: z.string().optional(),
     '52WeekHigh': z.string().optional(),
     '52WeekLow': z.string().optional(),
@@ -75,6 +76,7 @@ export type SecuritySnapshot = {
   beta: number | null
   week52High: number | null
   week52Low: number | null
+  fundamentalsAsOf?: string | null
   source: string
 }
 
@@ -230,6 +232,7 @@ export const fetchAlphaVantageSecurity = async (
     beta: parseNumber(overviewResponse.Beta),
     week52High: parseNumber(overviewResponse['52WeekHigh']),
     week52Low: parseNumber(overviewResponse['52WeekLow']),
+    fundamentalsAsOf: overviewResponse.LatestQuarter ?? null,
     source: 'Alpha Vantage',
   }
 }

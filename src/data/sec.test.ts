@@ -63,6 +63,7 @@ describe('enrichWithSecFallback', () => {
     expect(enriched.revenueGrowth).toBe(0.9435)
     expect(enriched.eps).toBe(-0.88)
     expect(enriched.peRatio).toBeNull()
+    expect(enriched.fundamentalsAsOf).toBe('2026-06-24')
     expect(enriched.source).toBe('Finnhub + SEC EDGAR')
   })
 })

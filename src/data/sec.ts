@@ -53,10 +53,7 @@ export const enrichWithSecFallback = async (
   try {
     const sec = await fetchSecFallback(security.symbol)
     const eps = security.eps ?? sec.epsAnnualized
-    const peRatio =
-      security.peRatio ?? (eps != null && eps > 0 ? security.price / eps : null)
     const usedSec = [
-      security.peRatio == null && peRatio != null,
       security.profitMargin == null && sec.profitMargin != null,
       security.revenueGrowth == null && sec.revenueGrowth != null,
       security.eps == null && eps != null,
@@ -65,12 +62,13 @@ export const enrichWithSecFallback = async (
 
     return {
       ...security,
-      peRatio,
+      peRatio: security.peRatio,
       eps,
       profitMargin: security.profitMargin ?? sec.profitMargin,
       returnOnEquity: security.returnOnEquity ?? sec.returnOnEquity,
       revenueGrowth: security.revenueGrowth ?? sec.revenueGrowth,
       earningsGrowth: security.earningsGrowth ?? sec.earningsGrowth,
+      fundamentalsAsOf: sec.filingDate,
       source: usedSec ? `${security.source} + SEC EDGAR` : security.source,
     }
   } catch {

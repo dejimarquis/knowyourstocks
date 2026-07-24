@@ -28,6 +28,7 @@ const securitySnapshotSchema: z.ZodType<SecuritySnapshot> = z.object({
   beta: nullableNumber,
   week52High: nullableNumber,
   week52Low: nullableNumber,
+  fundamentalsAsOf: z.string().nullable().optional().default(null),
   source: z.string(),
 })
 
@@ -133,8 +134,9 @@ export const watchlistSchema = z.object({
   modelPreferences: z
     .object({
       includeThesisNote: z.boolean(),
+      enablePhi: z.boolean().default(true),
     })
-    .default({ includeThesisNote: false }),
+    .default({ includeThesisNote: false, enablePhi: true }),
   insightFeedback: z
     .record(z.string(), z.enum(['useful', 'not_useful']))
     .default({}),
@@ -153,6 +155,7 @@ export const emptyWatchlist: Watchlist = {
   latestBrief: null,
   modelPreferences: {
     includeThesisNote: false,
+    enablePhi: true,
   },
   insightFeedback: {},
 }

@@ -15,10 +15,8 @@ const handler = async (
 ): Promise<HttpResponseInit> => {
   try {
     const body = parseIntelligenceRequest(await request.json())
-    const forwardedFor = request.headers.get('x-forwarded-for') ?? 'anonymous'
     const clientId =
-      request.headers.get('x-watchlist-client') ??
-      forwardedFor.split(',')[0].trim()
+      request.headers.get('x-watchlist-client') ?? 'anonymous-browser'
     const intelligence = await generateWatchlistIntelligence(body, clientId)
 
     context.log('Generated watchlist intelligence.')

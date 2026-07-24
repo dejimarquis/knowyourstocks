@@ -190,7 +190,7 @@ There are no email, SMS, push, or background notifications.
 - If Phi fails, times out, exceeds budget, or fails validation, show the complete deterministic brief.
 - The free-text thesis note is excluded unless the user explicitly opts in.
 - Limit model calls to one best-effort call per completed review.
-- Cap watchlists at 25 securities and model requests at configured daily limits.
+- Cap watchlists at 25 securities, reserve model calls in durable Azure storage, and stop globally at the configured monthly ceiling.
 
 ## Data requirements
 

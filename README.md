@@ -34,7 +34,10 @@ The command also starts Azurite for the Functions runtime and places Homebrew's 
 ```bash
 npm run lint
 npm test
+npm run test:api
+npm run test:e2e
 npm run build
+npm run build:api
 ```
 
 See `REQUIREMENTS.md` for the product and technical specification and `DESIGN_SYSTEM.md` for interface rules.
@@ -46,3 +49,5 @@ Visible financial metrics can be expanded for plain-language definitions and an 
 ## Deployment
 
 The application runs on Azure Static Web Apps Free. Every successful push to `main` is verified and deployed through `.github/workflows/azure-static-web-apps.yml`.
+
+`azd provision` also creates the small ZRS Storage account used only for durable model-call counters. Its post-provision hook configures the encrypted Static Web Apps connection setting without printing the credential.

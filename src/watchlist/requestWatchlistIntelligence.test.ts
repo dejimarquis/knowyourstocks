@@ -72,13 +72,19 @@ describe('requestWatchlistIntelligence', () => {
 
     const firstBody = JSON.parse(
       String(fetchMock.mock.calls[0][1]?.body),
-    ) as { thesis: { note?: string } }
+    ) as {
+      thesis: { note?: string }
+      watchlist?: unknown
+      stableSymbols?: unknown
+    }
     expect(firstBody.thesis.note).toBeUndefined()
+    expect(firstBody.watchlist).toBeUndefined()
+    expect(firstBody.stableSymbols).toBeUndefined()
 
     await requestWatchlistIntelligence(
       {
         ...watchlist,
-        modelPreferences: { includeThesisNote: true },
+        modelPreferences: { includeThesisNote: true, enablePhi: true },
       },
       brief,
       { ...defaultThesis, note: 'Private conviction' },
@@ -87,6 +93,60 @@ describe('requestWatchlistIntelligence', () => {
       String(fetchMock.mock.calls[1][1]?.body),
     ) as { thesis: { note?: string } }
     expect(secondBody.thesis.note).toBe('Private conviction')
+  })
+
+  it('does not call Phi when model enhancement is disabled', async () => {
+    const watchlist: Watchlist = {
+      ...emptyWatchlist,
+      modelPreferences: {
+        includeThesisNote: false,
+        enablePhi: false,
+      },
+      items: [
+        createWatchlistItem(
+          snapshot,
+          scoreSecurity(snapshot, defaultThesis),
+        ),
+      ],
+    }
+    const brief = generateWatchlistBrief(watchlist)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await requestWatchlistIntelligence(
+      watchlist,
+      brief,
+      defaultThesis,
+    )
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.modelStatus).toBe('not_requested')
+  })
+
+  it('does not spend model quota for a stable brief with no signals', async () => {
+    const stableSnapshot = { ...snapshot, changePercent: 1 }
+    const watchlist: Watchlist = {
+      ...emptyWatchlist,
+      items: [
+        createWatchlistItem(
+          stableSnapshot,
+          scoreSecurity(stableSnapshot, defaultThesis),
+        ),
+      ],
+    }
+    const brief = generateWatchlistBrief(watchlist)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await requestWatchlistIntelligence(
+      watchlist,
+      brief,
+      defaultThesis,
+    )
+
+    expect(brief.deterministicInsights).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result.modelStatus).toBe('not_requested')
   })
 
   it('falls back to the deterministic brief when the endpoint fails', async () => {

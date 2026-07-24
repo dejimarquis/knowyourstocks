@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@azure/data-tables": "^13.3.2",
     "@azure/functions": "^4.9.0",
     "zod": "^4.4.3"
   },

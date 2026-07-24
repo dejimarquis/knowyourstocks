@@ -6,6 +6,7 @@ import { SecurityLookup } from './SecurityLookup'
 const defaultProps = {
   thesis: defaultThesis,
   watchedSymbols: new Set<string>(),
+  watchlistLocked: false,
   onToggleWatch: vi.fn(),
 }
 

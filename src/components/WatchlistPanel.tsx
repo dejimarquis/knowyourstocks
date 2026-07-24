@@ -9,6 +9,7 @@ type WatchlistPanelProps = {
   reviewStatus: 'idle' | 'reviewing' | 'error'
   reviewError: string | null
   onIncludeThesisNoteChange: (include: boolean) => void
+  onEnablePhiChange: (enabled: boolean) => void
   onInsightFeedback: (
     insightId: string,
     value: 'useful' | 'not_useful',
@@ -37,6 +38,7 @@ export function WatchlistPanel({
   reviewStatus,
   reviewError,
   onIncludeThesisNoteChange,
+  onEnablePhiChange,
   onInsightFeedback,
 }: WatchlistPanelProps) {
   const brief = watchlist.latestBrief
@@ -111,7 +113,20 @@ export function WatchlistPanel({
           </p>
           <label className="model-note-option">
             <input
+              checked={watchlist.modelPreferences.enablePhi}
+              disabled={reviewStatus === 'reviewing'}
+              onChange={(event) => onEnablePhiChange(event.target.checked)}
+              type="checkbox"
+            />
+            <span>Use Azure Phi to connect verified watchlist signals</span>
+          </label>
+          <label className="model-note-option">
+            <input
               checked={watchlist.modelPreferences.includeThesisNote}
+              disabled={
+                !watchlist.modelPreferences.enablePhi ||
+                reviewStatus === 'reviewing'
+              }
               onChange={(event) =>
                 onIncludeThesisNoteChange(event.target.checked)
               }
@@ -311,10 +326,13 @@ export function WatchlistPanel({
                   <strong>{formatDate(item.addedAt)}</strong>
                 </div>
                 {item.reviewError ? (
-                  <span className="watchlist-item-error">Data unavailable</span>
+                  <span className="watchlist-item-error" role="status">
+                    Data unavailable
+                  </span>
                 ) : null}
                 <button
                   className="watchlist-remove"
+                  disabled={reviewStatus === 'reviewing'}
                   onClick={() => onRemove(item.symbol)}
                   type="button"
                 >
