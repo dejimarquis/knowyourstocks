@@ -157,6 +157,48 @@ describe('generateWatchlistIntelligence', () => {
     })
   })
 
+  it('validates all assessment evidence before limiting display to three', async () => {
+    const denseRequest = parseIntelligenceRequest({
+      version: 2,
+      thesis: request.thesis,
+      stocks: [
+        {
+          symbol: 'MSFT',
+          name: 'Microsoft',
+          evidence: [1, 2, 3, 4].map((index) => ({
+            id: `msft-${index}`,
+            symbol: 'MSFT',
+            text: `Verified Microsoft evidence ${index}.`,
+          })),
+        },
+      ],
+      deterministicSignals: [],
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        response({
+          MSFT: {
+            symbol: 'MSFT',
+            score: 70,
+            opinion: 'Promising but mixed',
+            strengthEvidenceIds: [1, 2, 3, 4],
+            riskEvidenceIds: [1, 2, 3, 4],
+            confidence: 'medium',
+          },
+        }),
+      ),
+    )
+
+    const output = await generateWatchlistIntelligence(
+      denseRequest,
+      'dense-evidence-client',
+    )
+
+    expect(output.assessments[0].strengths).toHaveLength(3)
+    expect(output.assessments[0].risks).toHaveLength(3)
+  })
+
   it('rejects unknown prioritized evidence', async () => {
     vi.stubGlobal(
       'fetch',

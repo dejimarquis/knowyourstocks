@@ -271,28 +271,38 @@ const normalizeWatchlistOutput = (
       pick(assessment, ['opinion', 'Opinion']),
       score,
     )
+    const stock = request.stocks.find(
+      (candidate) =>
+        candidate.symbol.toUpperCase() === symbol.toUpperCase(),
+    )
+    const strengthIds = pick(assessment, [
+      'strengthEvidenceIds',
+      'StrengthEvidenceIds',
+      'strengths',
+      'evidenceIds',
+    ])
+    const riskIds = pick(assessment, [
+      'riskEvidenceIds',
+      'RiskEvidenceIds',
+      'risks',
+      'evidenceIds',
+    ])
     const strengths = validateAttachment(
       catalog.resolveIds(
-        pick(assessment, [
-          'strengthEvidenceIds',
-          'StrengthEvidenceIds',
-          'strengths',
-          'evidenceIds',
-        ]),
-        { min: 1, max: 3 },
-      ),
+        Array.isArray(strengthIds) && strengthIds.length === 0
+          ? [stock?.evidence[0]?.id]
+          : strengthIds ?? [stock?.evidence[0]?.id],
+        { min: 1, max: 16 },
+      ).slice(0, 3),
       symbol,
     )
     const risks = validateAttachment(
       catalog.resolveIds(
-        pick(assessment, [
-          'riskEvidenceIds',
-          'RiskEvidenceIds',
-          'risks',
-          'evidenceIds',
-        ]),
-        { min: 1, max: 3 },
-      ),
+        Array.isArray(riskIds) && riskIds.length === 0
+          ? [stock?.evidence.at(-1)?.id]
+          : riskIds ?? [stock?.evidence.at(-1)?.id],
+        { min: 1, max: 16 },
+      ).slice(0, 3),
       symbol,
     )
     const assessmentSummary = pick(assessment, [

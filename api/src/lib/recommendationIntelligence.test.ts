@@ -86,8 +86,8 @@ describe('generateRecommendationIntelligence', () => {
           score: 80 - index * 5,
           opinion: 'Promising but mixed',
           confidence: 'medium',
-          evidenceIds: [`${symbol}-evidence`],
-          riskEvidenceIds: [`${symbol}-evidence`],
+          evidenceIds: index === 0 ? [] : [`${symbol}-evidence`],
+          riskEvidenceIds: index === 0 ? [] : [`${symbol}-evidence`],
         },
       ]),
     )
@@ -105,6 +105,7 @@ describe('generateRecommendationIntelligence', () => {
       score: 80,
       confidence: 'medium',
     })
+    expect(output.rankings[0].rationaleEvidence).toHaveLength(1)
   })
 
   it('rejects an out-of-set symbol', async () => {

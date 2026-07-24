@@ -210,32 +210,38 @@ const normalizeRecommendationOutput = (
     }
     const fallbackRationale = candidate.evidence[0]
     const fallbackRisk = candidate.evidence.at(-1) ?? fallbackRationale
+    const rationaleIds = pick(ranking, [
+      'rationaleEvidenceIds',
+      'RationaleEvidenceIds',
+      'rationale_evidence_ids',
+      'evidenceIds',
+      'EvidenceIds',
+    ])
+    const riskIds = pick(ranking, [
+      'riskEvidenceIds',
+      'RiskEvidenceIds',
+      'risk_evidence_ids',
+      'evidenceIds',
+    ])
     const score = normalizeScore(
       pick(ranking, ['score', 'Score', 'thesisEvidenceScore']),
     )
     const rationaleEvidence = evidenceForSymbol(
       catalog.resolveIds(
-        pick(ranking, [
-          'rationaleEvidenceIds',
-          'RationaleEvidenceIds',
-          'rationale_evidence_ids',
-          'evidenceIds',
-          'EvidenceIds',
-        ]) ?? [fallbackRationale.id],
-        { min: 1, max: 3 },
-      ),
+        Array.isArray(rationaleIds) && rationaleIds.length === 0
+          ? [fallbackRationale.id]
+          : rationaleIds ?? [fallbackRationale.id],
+        { min: 1, max: 12 },
+      ).slice(0, 3),
       symbol,
     )
     const riskEvidence = evidenceForSymbol(
       catalog.resolveIds(
-        pick(ranking, [
-          'riskEvidenceIds',
-          'RiskEvidenceIds',
-          'risk_evidence_ids',
-          'evidenceIds',
-        ]) ?? [fallbackRisk.id],
-        { min: 1, max: 3 },
-      ),
+        Array.isArray(riskIds) && riskIds.length === 0
+          ? [fallbackRisk.id]
+          : riskIds ?? [fallbackRisk.id],
+        { min: 1, max: 12 },
+      ).slice(0, 3),
       symbol,
     )
     const rawRationale = pick(ranking, ['rationale', 'Rationale', 'reason'])
