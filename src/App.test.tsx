@@ -29,9 +29,10 @@ describe('App', () => {
     render(<App />)
 
     expect(screen.getByText('Your next search uses this lens.')).toBeInTheDocument()
-    expect(
-      screen.getByText('A clearer way to understand a stock'),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Research' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
   })
 
   it('surfaces damaged browser data instead of silently deleting it', () => {

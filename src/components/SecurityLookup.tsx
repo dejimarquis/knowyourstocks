@@ -6,18 +6,21 @@ import {
 import { fetchFinnhubSecurity } from '../data/finnhub'
 import { enrichWithSecFallback } from '../data/sec'
 import type { InvestmentThesis } from '../domain/thesis'
-import { scoreSecurity } from '../scoring/scoreSecurity'
+import { scoreSecurity, type FitScore } from '../scoring/scoreSecurity'
+import {
+  loadFinnhubKey,
+  saveFinnhubKey,
+} from '../storage/providerKeyStorage'
 
-const apiKeyStorageKey = 'knowyourstocks.finnhubKey'
 const securityCacheKey = 'knowyourstocks.lastSecurity.v2'
 const demoKey = 'demo'
 const cacheLifetimeMs = 6 * 60 * 60 * 1000
 
 type SecurityLookupProps = {
   thesis: InvestmentThesis
+  watchedSymbols: Set<string>
+  onToggleWatch: (security: SecuritySnapshot, fit: FitScore) => void
 }
-
-const loadApiKey = () => window.sessionStorage.getItem(apiKeyStorageKey) ?? ''
 
 type CachedSecurity = {
   fetchedAt: number
@@ -143,8 +146,12 @@ const formatDate = (value: string) =>
     timeZone: 'UTC',
   }).format(new Date(`${value}T00:00:00Z`))
 
-export function SecurityLookup({ thesis }: SecurityLookupProps) {
-  const [apiKey, setApiKey] = useState(loadApiKey)
+export function SecurityLookup({
+  thesis,
+  watchedSymbols,
+  onToggleWatch,
+}: SecurityLookupProps) {
+  const [apiKey, setApiKey] = useState(loadFinnhubKey)
   const [initialSecurity] = useState(loadCachedSecurity)
   const [symbol, setSymbol] = useState(initialSecurity?.symbol ?? 'IBM')
   const [security, setSecurity] = useState<SecuritySnapshot | null>(
@@ -168,6 +175,7 @@ export function SecurityLookup({ thesis }: SecurityLookupProps) {
     .slice(0, 2)
   const isRefreshing =
     security?.symbol === symbol.trim().toUpperCase() && status !== 'loading'
+  const isWatched = security ? watchedSymbols.has(security.symbol) : false
 
   const handleResearch = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -208,12 +216,7 @@ export function SecurityLookup({ thesis }: SecurityLookupProps) {
 
   const handleApiKeyChange = (value: string) => {
     setApiKey(value)
-
-    if (value.trim()) {
-      window.sessionStorage.setItem(apiKeyStorageKey, value.trim())
-    } else {
-      window.sessionStorage.removeItem(apiKeyStorageKey)
-    }
+    saveFinnhubKey(value)
   }
 
   return (
@@ -379,6 +382,16 @@ export function SecurityLookup({ thesis }: SecurityLookupProps) {
                 ))}
               </ol>
             </details>
+
+            <div className="result-actions">
+              <button
+                className={isWatched ? 'watch-action watched' : 'watch-action'}
+                onClick={() => onToggleWatch(security, fit)}
+                type="button"
+              >
+                {isWatched ? 'Remove from watchlist' : 'Add to watchlist'}
+              </button>
+            </div>
           </article>
         </div>
       ) : null}

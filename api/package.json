@@ -9,11 +9,12 @@
   "scripts": {
     "build": "tsc",
     "prestart": "npm run build",
-    "start": "func start --typescript --port 7071",
+    "start": "func start --typescript --port 7072",
     "test": "vitest run"
   },
   "dependencies": {
-    "@azure/functions": "^4.9.0"
+    "@azure/functions": "^4.9.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -7,9 +7,10 @@
     "node": ">=22 <25"
   },
   "scripts": {
-    "dev": "concurrently --kill-others --names web,api --prefix-colors blue,magenta \"npm run dev:web\" \"npm run dev:api\"",
+    "dev": "PATH=/opt/homebrew/opt/node@22/bin:$PATH concurrently --kill-others --names web,storage,api --prefix-colors blue,yellow,magenta \"npm run dev:web\" \"npm run dev:storage\" \"npm run dev:api\"",
     "dev:web": "vite",
-    "dev:api": "npm --prefix api start",
+    "dev:storage": "azurite --silent --location .azurite",
+    "dev:api": "AzureWebJobsStorage=UseDevelopmentStorage=true FUNCTIONS_WORKER_RUNTIME=node npm --prefix api start",
     "build": "tsc -b && vite build",
     "build:api": "npm --prefix api run build",
     "lint": "oxlint",

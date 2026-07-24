@@ -28,3 +28,25 @@ The same-origin SEC fallback receives only a public ticker symbol. It does not r
 The thesis is stored in browser `localStorage` so it survives reloads. It is not sent to Azure, Alpha Vantage, or an AI service. Other browser profiles cannot normally access it, but anyone with access to the same unlocked browser profile or device may be able to view it.
 
 Do not enter account numbers, holdings, passwords, or other sensitive financial information in the thesis note.
+
+## Watchlist intelligence
+
+The watchlist, snapshots, brief, and feedback remain in browser `localStorage`.
+
+When a review completes, the managed API may send a compact evidence packet to Azure Foundry Phi. It contains:
+
+- structured thesis preferences;
+- watched symbols and classifications;
+- current fit labels;
+- deterministic signal titles, summaries, and evidence;
+- the free-text thesis note only when the user explicitly opts in.
+
+It does not contain the Finnhub key. The server does not persist watchlist packets or prompts. It logs only coarse status and error information.
+
+Phi output is treated as untrusted:
+
+- only known evidence aliases are accepted;
+- model patterns must cite verified deterministic signals;
+- unknown evidence and prohibited trade-advice language are rejected;
+- model failures fall back to the deterministic brief;
+- model calls time out and cannot block the initial watchlist result.

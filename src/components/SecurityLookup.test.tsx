@@ -3,6 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defaultThesis } from '../domain/thesis'
 import { SecurityLookup } from './SecurityLookup'
 
+const defaultProps = {
+  thesis: defaultThesis,
+  watchedSymbols: new Set<string>(),
+  onToggleWatch: vi.fn(),
+}
+
 const quoteResponse = {
   c: 206.5,
   dp: 0.3548,
@@ -57,7 +63,7 @@ describe('SecurityLookup', () => {
         ),
     )
 
-    render(<SecurityLookup thesis={defaultThesis} />)
+    render(<SecurityLookup {...defaultProps} />)
 
     fireEvent.click(screen.getByText('Data access'))
     fireEvent.change(screen.getByLabelText('Free Finnhub key'), {
@@ -96,7 +102,7 @@ describe('SecurityLookup', () => {
 
     vi.stubGlobal('fetch', fetchMock)
 
-    const firstRender = render(<SecurityLookup thesis={defaultThesis} />)
+    const firstRender = render(<SecurityLookup {...defaultProps} />)
     fireEvent.click(screen.getByText('Data access'))
     fireEvent.change(screen.getByLabelText('Free Finnhub key'), {
       target: { value: 'personal-key' },
@@ -107,7 +113,7 @@ describe('SecurityLookup', () => {
     })
     firstRender.unmount()
 
-    render(<SecurityLookup thesis={defaultThesis} />)
+    render(<SecurityLookup {...defaultProps} />)
 
     expect(
       screen.getByRole('heading', {

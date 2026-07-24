@@ -27,6 +27,8 @@ The MVP is an educational research tool for the owner and friends. It is not a b
 | On-demand refresh | Opening or refreshing a security fetches the latest provider data and recalculates fit |
 | Personal review | First visit on or after Monday, plus a manual refresh button |
 | Alerts | In-app only |
+| Watchlist | Browser-local, up to 25 securities |
+| Intelligence | Deterministic signals plus bounded Azure Foundry Phi patterns |
 | Analytics | No product analytics, essential error logging only |
 | Feedback | Anonymous feedback form |
 | Cloud | Azure only |
@@ -105,6 +107,9 @@ ETF pages use fund-relevant attributes and do not apply company-only metrics.
 - See fit-change and alert states.
 - Persist the list in the same browser.
 - Warn that clearing browser storage or changing devices loses local data.
+- Review the watchlist on demand and on the next visit after a new Monday.
+- Generate deterministic fit, price, fundamental, earnings, stale-data, sentiment, and concentration signals.
+- Display model-proposed patterns separately from authoritative signals.
 
 ### Send feedback
 
@@ -173,6 +178,19 @@ Create local alerts for:
 - stale or unavailable data.
 
 There are no email, SMS, push, or background notifications.
+
+## Watchlist intelligence
+
+- Deterministic rules guarantee coverage and assign severity.
+- Azure Foundry Phi-4-mini may reorder verified signals and propose cross-signal patterns.
+- Phi receives compact signal aliases rather than raw provider payloads.
+- User-facing explanations are assembled from verified deterministic evidence.
+- The model cannot alter metrics, severity, fit scores, or source dates.
+- Reject unknown evidence, malformed output, and buy/sell/hold language.
+- If Phi fails, times out, exceeds budget, or fails validation, show the complete deterministic brief.
+- The free-text thesis note is excluded unless the user explicitly opts in.
+- Limit model calls to one best-effort call per completed review.
+- Cap watchlists at 25 securities and model requests at configured daily limits.
 
 ## Data requirements
 
@@ -278,6 +296,7 @@ Use:
    - Table Storage for feedback.
    - Blob Storage for an EOD-aware on-demand market-data cache if quotas require it.
 3. Minimal built-in logging or Application Insights only when needed to diagnose failures.
+4. Azure Foundry with a serverless Phi deployment for bounded watchlist pattern selection.
 
 Do not add PostgreSQL, Cosmos DB, Key Vault, API Management, Container Apps, or a dedicated Function App.
 
@@ -368,9 +387,9 @@ Cover:
 - Email, SMS, or push notifications.
 - Social feeds or public portfolios.
 - LLM-generated investment analysis.
-- Hosted AI models.
+- Open-ended AI investment advice or autonomous actions.
 - Subscription billing.
-- Multiple data providers.
+- Unverified web browsing by the model.
 - A database for application state.
 - A full admin dashboard.
 - Multiple Azure environments or extensive infrastructure automation.

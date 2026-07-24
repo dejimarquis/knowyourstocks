@@ -39,7 +39,7 @@ test('researches a stock and explains its thesis fit', async ({ page }) => {
   })
 
   await page.goto('/')
-  await page.getByRole('button', { name: 'Search' }).click()
+  await page.getByRole('button', { name: 'Search', exact: true }).click()
 
   await expect(
     page.getByRole('heading', { name: 'International Business Machines' }),
@@ -47,6 +47,11 @@ test('researches a stock and explains its thesis fit', async ({ page }) => {
   await expect(page.locator('.price-line strong')).toHaveText('$206.50')
   await expect(page.locator('.fit-panel > strong')).toHaveText('93')
   await expect(page.getByText('Source: Alpha Vantage', { exact: false })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Add to watchlist' }).click()
+  await page.getByRole('button', { name: 'Watchlist 1' }).click()
+  await expect(page.getByRole('heading', { name: 'What deserves your attention?' })).toBeVisible()
+  await expect(page.getByText('International Business Machines')).toBeVisible()
 })
 
 test('uses SEC filings when Finnhub fundamentals are incomplete', async ({
@@ -103,7 +108,7 @@ test('uses SEC filings when Finnhub fundamentals are incomplete', async ({
   await page.getByText('Data access').click()
   await page.getByLabel('Free Finnhub key').fill('personal-key')
   await page.getByLabel('Ticker symbol').fill('CBRS')
-  await page.getByRole('button', { name: 'Search' }).click()
+  await page.getByRole('button', { name: 'Search', exact: true }).click()
 
   await expect(
     page.getByRole('heading', { name: 'Cerebras Systems Inc.' }),
@@ -122,5 +127,115 @@ test('uses SEC filings when Finnhub fundamentals are incomplete', async ({
   ).toBeVisible()
   await expect(
     page.getByText('Source: Finnhub + SEC EDGAR', { exact: false }),
+  ).toBeVisible()
+})
+
+test('builds a deterministic watchlist brief and layers Phi output', async ({
+  page,
+}) => {
+  page.on('pageerror', (error) => console.error('PAGE ERROR', error))
+  await page.route('https://finnhub.io/api/v1/**', async (route) => {
+    const url = new URL(route.request().url())
+
+    if (url.pathname.endsWith('/quote')) {
+      await route.fulfill({
+        json: { c: 206.5, dp: 6.2, pc: 194.45, t: 1784840400 },
+      })
+      return
+    }
+
+    if (url.pathname.endsWith('/stock/profile2')) {
+      await route.fulfill({
+        json: {
+          exchange: 'NYSE',
+          finnhubIndustry: 'Technology',
+          marketCapitalization: 193400.209,
+          name: 'International Business Machines',
+          ticker: 'IBM',
+        },
+      })
+      return
+    }
+
+    if (url.pathname.endsWith('/stock/metric')) {
+      await route.fulfill({
+        json: {
+          metric: {
+            beta: 0.675,
+            epsTTM: 11.3,
+            marketCapitalization: 193400.209,
+            netProfitMarginTTM: 15.6,
+            peBasicExclExtraTTM: 18.21,
+            revenueGrowthTTMYoy: 9.5,
+            roeTTM: 35.8,
+          },
+        },
+      })
+      return
+    }
+
+    if (url.pathname.endsWith('/calendar/earnings')) {
+      await route.fulfill({
+        json: {
+          earningsCalendar: [{ symbol: 'IBM', date: '2026-07-28' }],
+        },
+      })
+      return
+    }
+
+    await route.fulfill({
+      json: {
+        sentiment: { bullishPercent: 0.7, bearishPercent: 0.3 },
+        buzz: { articlesInLastWeek: 8 },
+      },
+    })
+  })
+  await page.route('**/api/watchlist-intelligence', async (route) => {
+    const body = route.request().postDataJSON() as {
+      deterministicSignals: Array<{ id: string }>
+    }
+    const evidenceIds = body.deterministicSignals
+      .slice(0, 2)
+      .map((signal) => signal.id)
+
+    await route.fulfill({
+      json: {
+        prioritizedSignalIds: body.deterministicSignals.map(
+          (signal) => signal.id,
+        ),
+        summary: 'Price movement and an upcoming report deserve attention.',
+        experimentalPatterns:
+          evidenceIds.length === 2
+            ? [
+                {
+                  title: 'Movement before a catalyst',
+                  explanation:
+                    'The price move and upcoming report may be related.',
+                  evidenceIds,
+                  confidence: 'medium',
+                  thesisRelationship:
+                    'The report may clarify the current quality thesis.',
+                },
+              ]
+            : [],
+        uncertainties: [],
+      },
+    })
+  })
+
+  await page.goto('/')
+  await page.getByText('Data access').click()
+  await page.getByLabel('Free Finnhub key').fill('personal-key')
+  await page.getByRole('button', { name: 'Search', exact: true }).click()
+  await page.getByRole('button', { name: 'Add to watchlist' }).click()
+  await page.getByRole('button', { name: 'Watchlist 1' }).click()
+  await page.getByRole('button', { name: 'Review' }).click()
+
+  await expect(page.getByText('Weekly brief')).toBeVisible()
+  await expect(
+    page.getByText('Price movement and an upcoming report deserve attention.'),
+  ).toBeVisible()
+  await expect(
+    page.getByText('Experimental patterns', { exact: true }),
   ).toBeVisible()
 })

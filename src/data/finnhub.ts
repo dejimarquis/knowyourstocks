@@ -49,6 +49,37 @@ const searchSchema = z.object({
     .optional(),
 })
 
+const earningsCalendarSchema = z.object({
+  earningsCalendar: z
+    .array(
+      z.object({
+        date: z.string(),
+        symbol: z.string(),
+      }),
+    )
+    .optional(),
+})
+
+const sentimentSchema = z.object({
+  sentiment: z
+    .object({
+      bullishPercent: z.number().nullable().optional(),
+      bearishPercent: z.number().nullable().optional(),
+    })
+    .optional(),
+  buzz: z
+    .object({
+      articlesInLastWeek: z.number().nullable().optional(),
+    })
+    .optional(),
+})
+
+export type FinnhubSentiment = {
+  score: number
+  articleCount: number | null
+  source: 'Finnhub'
+}
+
 const request = async (
   path: string,
   parameters: Record<string, string>,
@@ -105,6 +136,37 @@ const resolveSymbol = async (value: string, token: string): Promise<string> => {
 const percentToDecimal = (value: number | null | undefined) =>
   value == null ? null : value / 100
 
+const mergeQuoteAndMetrics = (
+  existing: SecuritySnapshot,
+  quote: z.infer<typeof quoteSchema>,
+  metrics: z.infer<typeof metricsSchema>['metric'],
+): SecuritySnapshot => ({
+  ...existing,
+  price: quote.c,
+  previousClose: quote.pc ?? existing.previousClose,
+  changePercent: quote.dp ?? existing.changePercent,
+  latestTradingDay: new Date(quote.t * 1000).toISOString().slice(0, 10),
+  marketCap:
+    metrics.marketCapitalization != null
+      ? metrics.marketCapitalization * 1_000_000
+      : existing.marketCap,
+  peRatio: metrics.peBasicExclExtraTTM ?? existing.peRatio,
+  priceToBook: metrics.pbAnnual ?? existing.priceToBook,
+  dividendYield:
+    percentToDecimal(metrics.dividendYieldIndicatedAnnual) ??
+    existing.dividendYield,
+  eps: metrics.epsTTM ?? existing.eps,
+  profitMargin:
+    percentToDecimal(metrics.netProfitMarginTTM) ?? existing.profitMargin,
+  returnOnEquity: percentToDecimal(metrics.roeTTM) ?? existing.returnOnEquity,
+  revenueGrowth:
+    percentToDecimal(metrics.revenueGrowthTTMYoy) ?? existing.revenueGrowth,
+  beta: metrics.beta ?? existing.beta,
+  week52High: metrics['52WeekHigh'] ?? existing.week52High,
+  week52Low: metrics['52WeekLow'] ?? existing.week52Low,
+  source: 'Finnhub',
+})
+
 export const fetchFinnhubSecurity = async (
   query: string,
   token: string,
@@ -157,5 +219,77 @@ export const fetchFinnhubSecurity = async (
     week52High: metrics['52WeekHigh'] ?? null,
     week52Low: metrics['52WeekLow'] ?? null,
     source: 'Finnhub',
+  }
+}
+
+export const refreshFinnhubSecurity = async (
+  existing: SecuritySnapshot,
+  token: string,
+): Promise<SecuritySnapshot> => {
+  const key = token.trim()
+
+  if (!key) {
+    throw new Error('Enter a Finnhub API key.')
+  }
+
+  const [quoteValue, metricsValue] = await Promise.all([
+    request('quote', { symbol: existing.symbol, token: key }),
+    request('stock/metric', {
+      symbol: existing.symbol,
+      metric: 'all',
+      token: key,
+    }),
+  ])
+  const quote = quoteSchema.parse(quoteValue)
+  const metrics = metricsSchema.parse(metricsValue).metric
+
+  if (!quote.c || !quote.t) {
+    throw new Error(
+      `Finnhub did not return current quote data for ${existing.symbol}.`,
+    )
+  }
+
+  return mergeQuoteAndMetrics(existing, quote, metrics)
+}
+
+export const fetchFinnhubEarningsCalendar = async (
+  symbols: string[],
+  token: string,
+  from: string,
+  to: string,
+): Promise<Map<string, string>> => {
+  const value = earningsCalendarSchema.parse(
+    await request('calendar/earnings', { from, to, token: token.trim() }),
+  )
+  const symbolSet = new Set(symbols)
+  return new Map(
+    (value.earningsCalendar ?? [])
+      .filter((event) => symbolSet.has(event.symbol))
+      .map((event) => [event.symbol, event.date]),
+  )
+}
+
+export const fetchFinnhubSentiment = async (
+  symbol: string,
+  token: string,
+): Promise<FinnhubSentiment | null> => {
+  try {
+    const value = sentimentSchema.parse(
+      await request('news-sentiment', { symbol, token: token.trim() }),
+    )
+    const bullish = value.sentiment?.bullishPercent
+    const bearish = value.sentiment?.bearishPercent
+
+    if (bullish == null || bearish == null) {
+      return null
+    }
+
+    return {
+      score: bullish - bearish,
+      articleCount: value.buzz?.articlesInLastWeek ?? null,
+      source: 'Finnhub',
+    }
+  } catch {
+    return null
   }
 }

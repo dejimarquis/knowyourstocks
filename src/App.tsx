@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import './App.css'
 import { SecurityLookup } from './components/SecurityLookup'
+import { WatchlistPanel } from './components/WatchlistPanel'
 import {
   defaultThesis,
   investmentHorizons,
@@ -9,7 +10,24 @@ import {
   sectors,
   type InvestmentThesis,
 } from './domain/thesis'
+import { createWatchlistItem, type Watchlist } from './domain/watchlist'
+import type { SecuritySnapshot } from './data/alphaVantage'
+import type { FitScore } from './scoring/scoreSecurity'
 import { loadThesis, saveThesis } from './storage/thesisStorage'
+import { loadFinnhubKey } from './storage/providerKeyStorage'
+import {
+  addWatchlistItem,
+  loadWatchlist,
+  removeWatchlistItem,
+  saveWatchlist,
+} from './storage/watchlistStorage'
+import { reviewWatchlist } from './watchlist/reviewWatchlist'
+import {
+  generateWatchlistBrief,
+  getWeeklyReviewKey,
+  isWeeklyReviewDue,
+} from './watchlist/generateWatchlistBrief'
+import { requestWatchlistIntelligence } from './watchlist/requestWatchlistIntelligence'
 
 function App() {
   const [initialThesis] = useState(() => loadThesis())
@@ -18,6 +36,21 @@ function App() {
     initialThesis.recoveryRequired,
   )
   const [saveStatus, setSaveStatus] = useState<string | null>(null)
+  const [initialWatchlist] = useState(loadWatchlist)
+  const [watchlist, setWatchlist] = useState<Watchlist>(
+    initialWatchlist.watchlist,
+  )
+  const [watchlistRecoveryRequired, setWatchlistRecoveryRequired] = useState(
+    initialWatchlist.recoveryRequired,
+  )
+  const [watchlistError, setWatchlistError] = useState<string | null>(null)
+  const [activeView, setActiveView] = useState<'research' | 'watchlist'>(
+    'research',
+  )
+  const [reviewStatus, setReviewStatus] = useState<
+    'idle' | 'reviewing' | 'error'
+  >('idle')
+  const [reviewError, setReviewError] = useState<string | null>(null)
 
   const selectedSectorNames = useMemo(
     () =>
@@ -55,21 +88,143 @@ function App() {
     setSaveStatus('Default thesis saved in this browser')
   }
 
+  const updateWatchlist = (nextWatchlist: Watchlist) => {
+    setWatchlist(nextWatchlist)
+    saveWatchlist(nextWatchlist)
+    setWatchlistRecoveryRequired(false)
+    setWatchlistError(null)
+  }
+
+  const handleToggleWatch = (
+    security: SecuritySnapshot,
+    fit: FitScore,
+  ) => {
+    try {
+      const isWatched = watchlist.items.some(
+        (item) => item.symbol === security.symbol,
+      )
+      const nextWatchlist = isWatched
+        ? removeWatchlistItem(watchlist, security.symbol)
+        : addWatchlistItem(
+            watchlist,
+            createWatchlistItem(security, fit),
+          )
+
+      updateWatchlist(nextWatchlist)
+    } catch (error) {
+      setWatchlistError(
+        error instanceof Error ? error.message : 'Watchlist could not be updated.',
+      )
+    }
+  }
+
+  const watchedSymbols = useMemo(
+    () => new Set(watchlist.items.map((item) => item.symbol)),
+    [watchlist.items],
+  )
+
+  const handleReviewWatchlist = async () => {
+    setReviewStatus('reviewing')
+    setReviewError(null)
+
+    try {
+      const now = new Date()
+      const reviewedWatchlist = await reviewWatchlist(
+        watchlist,
+        thesis,
+        loadFinnhubKey(),
+        now,
+      )
+      const weeklyDue = isWeeklyReviewDue(watchlist, now)
+      const deterministicBrief = generateWatchlistBrief(
+        reviewedWatchlist,
+        now,
+        weeklyDue ? 'weekly' : 'manual',
+      )
+      const reviewedWithBrief = {
+        ...reviewedWatchlist,
+        latestBrief: deterministicBrief,
+        lastWeeklyReviewKey: weeklyDue
+          ? getWeeklyReviewKey(now)
+          : reviewedWatchlist.lastWeeklyReviewKey,
+      }
+      updateWatchlist(reviewedWithBrief)
+      setReviewStatus('idle')
+
+      void requestWatchlistIntelligence(
+        reviewedWithBrief,
+        deterministicBrief,
+        thesis,
+      ).then((intelligenceBrief) => {
+        setWatchlist((current) => {
+          if (current.lastReviewAt !== reviewedWithBrief.lastReviewAt) {
+            return current
+          }
+
+          const completedWatchlist = {
+            ...current,
+            latestBrief: intelligenceBrief,
+          }
+          saveWatchlist(completedWatchlist)
+          return completedWatchlist
+        })
+      })
+    } catch (error) {
+      setReviewStatus('error')
+      setReviewError(
+        error instanceof Error ? error.message : 'Watchlist review failed.',
+      )
+    }
+  }
+
   return (
     <div className="app-shell">
       <header className="site-header">
         <a className="brand" href="#top" aria-label="Know Your Stocks home">
           <span>Know Your Stocks</span>
         </a>
-        <p>A clearer way to understand a stock</p>
+        <nav aria-label="Primary navigation">
+          <button
+            aria-current={activeView === 'research' ? 'page' : undefined}
+            onClick={() => setActiveView('research')}
+            type="button"
+          >
+            Research
+          </button>
+          <button
+            aria-current={activeView === 'watchlist' ? 'page' : undefined}
+            onClick={() => setActiveView('watchlist')}
+            type="button"
+          >
+            Watchlist
+            {watchlist.items.length > 0 ? ` ${watchlist.items.length}` : ''}
+          </button>
+        </nav>
       </header>
 
       <main id="top">
-        <h1 className="visually-hidden">Understand a stock quickly</h1>
+        {watchlistRecoveryRequired ? (
+          <div className="storage-alert" role="alert">
+            Your saved watchlist could not be read. Add a stock to create a new
+            watchlist.
+          </div>
+        ) : null}
+        {watchlistError ? (
+          <div className="storage-alert" role="alert">
+            {watchlistError}
+          </div>
+        ) : null}
 
-        <SecurityLookup thesis={thesis} />
+        {activeView === 'research' ? (
+          <>
+            <h1 className="visually-hidden">Understand a stock quickly</h1>
+            <SecurityLookup
+              onToggleWatch={handleToggleWatch}
+              thesis={thesis}
+              watchedSymbols={watchedSymbols}
+            />
 
-        <details className="thesis-disclosure" id="thesis">
+            <details className="thesis-disclosure" id="thesis">
           <summary>
             <span>
               <strong>Personalize your results</strong>
@@ -263,7 +418,35 @@ function App() {
               </div>
             </aside>
           </section>
-        </details>
+            </details>
+          </>
+        ) : (
+          <WatchlistPanel
+            onIncludeThesisNoteChange={(includeThesisNote) =>
+              updateWatchlist({
+                ...watchlist,
+                modelPreferences: { includeThesisNote },
+              })
+            }
+            onInsightFeedback={(insightId, value) =>
+              updateWatchlist({
+                ...watchlist,
+                insightFeedback: {
+                  ...watchlist.insightFeedback,
+                  [insightId]: value,
+                },
+              })
+            }
+            onRemove={(symbol) =>
+              updateWatchlist(removeWatchlistItem(watchlist, symbol))
+            }
+            onResearch={() => setActiveView('research')}
+            onReview={handleReviewWatchlist}
+            reviewError={reviewError}
+            reviewStatus={reviewStatus}
+            watchlist={watchlist}
+          />
+        )}
 
       </main>
 

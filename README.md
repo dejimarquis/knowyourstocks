@@ -10,6 +10,8 @@ Try IBM immediately with Alpha Vantage's public demo data. To research other US 
 
 Tap any visible metric to learn what it means and why it helps explain the business. Open **Why this score** for the full thesis-fit breakdown.
 
+Add researched stocks to the local watchlist, then select **Review** to compare snapshots and generate a prioritized brief. The brief works from deterministic rules first; Azure Foundry Phi may add separately labeled, evidence-backed experimental patterns.
+
 ## Local development
 
 Use Node.js 22 and Azure Functions Core Tools v4:
@@ -23,7 +25,9 @@ npm --prefix api install
 npm run dev
 ```
 
-`npm run dev` starts Vite and the local Azure Functions API together. The browser opens on Vite's URL, while `/api/*` is proxied to Functions on port 7071. Running `npm run dev:web` alone does not provide SEC fundamentals.
+`npm run dev` starts Vite and the local Azure Functions API together. The browser opens on Vite's URL, while `/api/*` is proxied to Functions on port 7072. Running `npm run dev:web` alone does not provide SEC fundamentals.
+
+The command also starts Azurite for the Functions runtime and places Homebrew's Node 22 first in `PATH`, avoiding unsupported-Node and `AzureWebJobsStorage` health warnings.
 
 ## Quality checks
 
