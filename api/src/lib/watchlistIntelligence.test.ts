@@ -199,6 +199,47 @@ describe('generateWatchlistIntelligence', () => {
     expect(output.assessments[0].risks).toHaveLength(3)
   })
 
+  it('bounds the server-generated assessment summary', async () => {
+    const longText = 'Grounded evidence '.repeat(20)
+    const longRequest = parseIntelligenceRequest({
+      version: 2,
+      thesis: request.thesis,
+      stocks: [
+        {
+          symbol: 'MSFT',
+          name: 'Microsoft',
+          evidence: [
+            { id: 'long-support', symbol: 'MSFT', text: longText },
+            { id: 'long-risk', symbol: 'MSFT', text: longText },
+          ],
+        },
+      ],
+      deterministicSignals: [],
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        response({
+          MSFT: {
+            symbol: 'MSFT',
+            score: 70,
+            opinion: 'Promising but mixed',
+            strengthEvidenceIds: [1],
+            riskEvidenceIds: [2],
+            confidence: 'medium',
+          },
+        }),
+      ),
+    )
+
+    const output = await generateWatchlistIntelligence(
+      longRequest,
+      'bounded-summary-client',
+    )
+
+    expect(output.assessments[0].summary.length).toBeLessThanOrEqual(300)
+  })
+
   it('rejects unknown prioritized evidence', async () => {
     vi.stubGlobal(
       'fetch',

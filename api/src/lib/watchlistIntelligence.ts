@@ -313,7 +313,8 @@ const normalizeWatchlistOutput = (
     if (typeof assessmentSummary === 'string') {
       assertNoProhibitedAdvice([assessmentSummary])
     }
-    const normalizedAssessmentSummary = `${strengths[0].text} Key uncertainty: ${risks[0].text}`
+    const normalizedAssessmentSummary =
+      `${strengths[0].text} Key uncertainty: ${risks[0].text}`.slice(0, 300)
 
     assertNoProhibitedAdvice([normalizedAssessmentSummary])
     assertNoInventedNumericClaims(normalizedAssessmentSummary, [
