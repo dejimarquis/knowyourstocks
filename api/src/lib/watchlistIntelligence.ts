@@ -362,7 +362,7 @@ export const generateWatchlistIntelligence = async (
   const url = `${settings.endpoint.replace(/\/$/, '')}/openai/deployments/${encodeURIComponent(settings.deployment)}/chat/completions?api-version=2024-10-21`
   const response = await fetch(url, {
     method: 'POST',
-    signal: AbortSignal.timeout(12_000),
+    signal: AbortSignal.timeout(25_000),
     headers: {
       'Content-Type': 'application/json',
       'api-key': settings.key,
