@@ -69,7 +69,7 @@ describe('research intelligence client', () => {
     )
 
     expect(request.thesis.note).toBe('Use durable cash flow as my main lens.')
-    expect(request.evidence.length).toBeLessThanOrEqual(12)
+    expect(request.evidence.length).toBeLessThanOrEqual(14)
     expect(request.evidence).toContainEqual(
       expect.objectContaining({
         id: 'metric:earningsGrowth',
@@ -77,8 +77,17 @@ describe('research intelligence client', () => {
       }),
     )
     expect(request.evidence).toContainEqual(
-      expect.objectContaining({ id: 'fit:valuation' }),
+      expect.objectContaining({ id: 'metric:peRatio' }),
     )
+    expect(
+      request.evidence.some(
+        (item) =>
+          item.id.startsWith('fit:') &&
+          /supports your thesis|weakens the thesis fit|is mixed/.test(
+            item.text,
+          ),
+      ),
+    ).toBe(true)
     expect(request.company.snapshot).toBeUndefined()
   })
 
@@ -99,7 +108,38 @@ describe('research intelligence client', () => {
 
     expect(first.source).toBe('network')
     expect(second.source).toBe('cache')
-    expect(second.score).toBe(78)
+
+    vi.mocked(Date.now).mockReturnValue(
+      1_000_000 + 6 * 60 * 60 * 1000 + 1,
+    )
+    const refreshed = await requestResearchIntelligence(request)
+    expect(refreshed.source).toBe('network')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('deduplicates concurrent requests for the same stock and thesis', async () => {
+    let resolveResponse: (response: Response) => void = () => undefined
+    const fetchMock = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveResponse = resolve
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const request = createResearchIntelligenceRequest(
+      security,
+      scoreSecurity(security, defaultThesis),
+      defaultThesis,
+    )
+
+    const first = requestResearchIntelligence(request)
+    const second = requestResearchIntelligence(request)
+    resolveResponse(new Response(JSON.stringify(response)))
+
+    const results = await Promise.all([first, second])
+    expect(results).toHaveLength(2)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(results[1].score).toBe(78)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/research-intelligence',
@@ -115,9 +155,5 @@ describe('research intelligence client', () => {
       researchIntelligenceCacheKey(request),
     )
 
-    vi.mocked(Date.now).mockReturnValue(1_000_000 + 6 * 60 * 60 * 1000 + 1)
-    const refreshed = await requestResearchIntelligence(request)
-    expect(refreshed.source).toBe('network')
-    expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 })

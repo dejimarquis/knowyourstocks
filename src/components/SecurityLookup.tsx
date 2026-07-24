@@ -116,6 +116,72 @@ const factorEducation: Record<string, string> = {
     'Checks the company against the investing style you selected, such as quality, growth, value, or income.',
 }
 
+const factorMeaning: Record<string, string> = {
+  sector: 'your selected themes',
+  risk: 'your risk comfort',
+  quality: 'profitability',
+  growth: 'your growth goals',
+  resilience: 'company size',
+  valuation: 'the price investors are paying',
+  preference: 'your investing style',
+}
+
+const joinPhrases = (values: string[]) =>
+  values.length <= 1
+    ? (values[0] ?? '')
+    : `${values.slice(0, -1).join(', ')} and ${values.at(-1)}`
+
+const capitalize = (value: string) =>
+  value ? `${value[0].toUpperCase()}${value.slice(1)}` : value
+
+const explainFit = (fit: FitScore) => {
+  if (fit.total == null) {
+    return 'There is not enough reliable data to judge this stock against your thesis yet.'
+  }
+
+  const available = fit.factors.filter((factor) => factor.available)
+  const supporting = available
+    .filter((factor) => factor.earned / factor.maximum >= 0.7)
+    .sort(
+      (left, right) =>
+        right.earned / right.maximum - left.earned / left.maximum,
+    )
+    .slice(0, 2)
+    .map((factor) => factorMeaning[factor.key] ?? factor.label.toLowerCase())
+  const conflicting = available
+    .filter((factor) => factor.earned / factor.maximum < 0.5)
+    .sort(
+      (left, right) =>
+        left.earned / left.maximum - right.earned / right.maximum,
+    )
+    .slice(0, 2)
+    .map((factor) => factorMeaning[factor.key] ?? factor.label.toLowerCase())
+
+  if (fit.label === 'Strong match') {
+    return `The strongest matches are ${joinPhrases(supporting)}.${
+      conflicting.length > 0
+        ? ` ${joinPhrases(conflicting)} still deserves a closer look.`
+        : ''
+    }`
+  }
+
+  if (fit.label === 'Moderate match') {
+    const conflict = joinPhrases(conflicting)
+    return `${supporting.length > 0 ? `It matches ${joinPhrases(supporting)}` : 'Some evidence matches your preferences'}, but ${
+      conflicting.length > 0
+        ? conflict
+        : 'the remaining evidence is mixed'
+    } ${conflicting.length > 1 ? 'keep' : 'keeps'} it from being a strong match.`
+  }
+
+  const conflict = joinPhrases(conflicting)
+  return `${supporting.length > 0 ? `The clearest match is ${joinPhrases(supporting)}.` : 'There is no clear match in the available evidence.'} ${
+    conflicting.length > 0
+      ? `${capitalize(conflict)} ${conflicting.length === 1 ? 'weakens' : 'weaken'} the score.`
+      : 'Several factors only partially match your preferences.'
+  }`
+}
+
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -125,6 +191,9 @@ const formatCurrency = (value: number) =>
 
 const formatPeRatio = (security: SecuritySnapshot) => {
   if (security.peRatio != null) {
+    if (security.peRatio > 500) {
+      return 'Over 500'
+    }
     return security.peRatio.toFixed(1)
   }
 
@@ -192,7 +261,15 @@ export function SecurityLookup({
     security: SecuritySnapshot
     fit: FitScore
     thesis: InvestmentThesis
-  } | null>(null)
+  } | null>(() =>
+    initialSecurity
+      ? {
+          security: initialSecurity,
+          fit: scoreSecurity(initialSecurity, thesis),
+          thesis,
+        }
+      : null,
+  )
   const intelligenceController = useRef<AbortController | null>(null)
   const intelligenceGeneration = useRef(0)
   const lastExternalResearch = useRef<string | null>(null)
@@ -202,13 +279,6 @@ export function SecurityLookup({
     () => (security ? scoreSecurity(security, thesis) : null),
     [security, thesis],
   )
-  const strongestFactors = fit?.factors
-    .filter((factor) => factor.available)
-    .sort(
-      (left, right) =>
-        right.earned / right.maximum - left.earned / left.maximum,
-    )
-    .slice(0, 2)
   const isRefreshing =
     security?.symbol === symbol.trim().toUpperCase() && status !== 'loading'
   const isWatched = security ? watchedSymbols.has(security.symbol) : false
@@ -228,6 +298,7 @@ export function SecurityLookup({
     : null
   const currentIntelligence =
     intelligence?.key === intelligenceKey ? intelligence : null
+  const fitExplanation = fit ? explainFit(fit) : ''
 
   useEffect(() => {
     if (!intelligenceRequest || !intelligenceKey) {
@@ -239,7 +310,7 @@ export function SecurityLookup({
     intelligenceController.current = controller
     setIntelligence({ key: intelligenceKey, status: 'loading' })
 
-    void requestResearchIntelligence(intelligenceRequest, controller.signal)
+    void requestResearchIntelligence(intelligenceRequest)
       .then((result) => {
         if (
           !controller.signal.aborted &&
@@ -348,6 +419,18 @@ export function SecurityLookup({
     saveFinnhubKey(value)
   }
 
+  const retryIntelligence = () => {
+    if (!security || !fit) {
+      return
+    }
+    setIntelligence(null)
+    setIntelligenceInput({
+      security,
+      fit,
+      thesis,
+    })
+  }
+
   return (
     <section className="security-research" aria-labelledby="research-title">
       <h2 className="visually-hidden" id="research-title">
@@ -442,13 +525,10 @@ export function SecurityLookup({
                 <span>Fit</span>
                 <strong>{fit.total ?? '—'}</strong>
                 <h4 id="fit-title">{fit.label}</h4>
-                <p>
-                  {strongestFactors?.map((factor) => factor.label).join(' and ')}
-                  {strongestFactors?.length ? ' support your thesis.' : ''}
-                </p>
+                <p>{fitExplanation}</p>
                 <small>
-                  This is a match against your preferences, not a prediction of
-                  future returns.
+                  This score measures fit with your preferences. It does not
+                  forecast returns.
                 </small>
               </div>
             </div>
@@ -469,6 +549,8 @@ export function SecurityLookup({
                 <p>
                   {security.eps != null && security.eps <= 0
                     ? 'The company currently reports a loss, so a price-to-earnings ratio would not be meaningful.'
+                    : security.peRatio != null && security.peRatio > 500
+                      ? 'Earnings are very small relative to the share price, so this P/E is extremely high and is not useful by itself.'
                     : metricDefinitions.peRatio.definition}
                 </p>
               </details>
@@ -521,47 +603,45 @@ export function SecurityLookup({
             >
               <div className="research-intelligence-heading">
                 <div>
-                  <span>Grounded AI assessment</span>
+                  <span>AI take</span>
                   <h4 id="research-intelligence-title">
-                    Thesis-evidence review
+                    What the evidence suggests
                   </h4>
                 </div>
                 <p>
-                  Separate from deterministic Fit. It reviews the supplied
-                  evidence against your structured thesis; neither score predicts
-                  returns.
+                  A second opinion based on the same company facts and your
+                  thesis. It does not predict returns.
                 </p>
               </div>
 
-              {!intelligenceInput ? (
-                <div className="research-intelligence-status">
-                  <strong>AI assessment not requested</strong>
-                  <span>
-                    Search or refresh this company to request a grounded AI
-                    thesis-evidence review.
-                  </span>
-                </div>
-              ) : !currentIntelligence ||
+              {!currentIntelligence ||
                 currentIntelligence.status === 'loading' ? (
                 <div className="research-intelligence-status" role="status">
-                  <strong>Assessing the grounded evidence…</strong>
+                  <strong>Analyzing this stock…</strong>
                   <span>
-                    Your deterministic market data and Fit remain available.
+                    Your company data and Fit score are ready while the AI take
+                    loads.
                   </span>
                 </div>
               ) : currentIntelligence.status === 'unavailable' ? (
                 <div className="research-intelligence-status" role="status">
-                  <strong>AI assessment unavailable</strong>
+                  <strong>AI take could not load</strong>
                   <span>
-                    No AI score is shown. The deterministic result above remains
-                    unchanged.
+                    The company data and Fit score above are still available.
                   </span>
+                  <button
+                    className="text-action"
+                    onClick={retryIntelligence}
+                    type="button"
+                  >
+                    Try AI again
+                  </button>
                 </div>
               ) : currentIntelligence.result ? (
                 <>
                   <div className="research-intelligence-summary">
                     <div className="ai-score">
-                      <span>AI thesis-evidence score</span>
+                      <span>AI evidence score</span>
                       <strong
                         aria-label={`${currentIntelligence.result.score} out of 100`}
                       >
@@ -580,20 +660,28 @@ export function SecurityLookup({
                   </div>
                   <div className="research-evidence-columns">
                     <div>
-                      <h5>Strengths</h5>
-                      <ul>
-                        {currentIntelligence.result.strengths.map((strength) => (
-                          <li key={strength.evidenceId}>{strength.text}</li>
-                        ))}
-                      </ul>
+                      <h5>What supports it</h5>
+                      {currentIntelligence.result.strengths.length > 0 ? (
+                        <ul>
+                          {currentIntelligence.result.strengths.map((strength) => (
+                            <li key={strength.evidenceId}>{strength.text}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p>No clear supporting evidence was identified.</p>
+                      )}
                     </div>
                     <div>
-                      <h5>Risks and gaps</h5>
-                      <ul>
-                        {currentIntelligence.result.risks.map((risk) => (
-                          <li key={risk.evidenceId}>{risk.text}</li>
-                        ))}
-                      </ul>
+                      <h5>What to watch</h5>
+                      {currentIntelligence.result.risks.length > 0 ? (
+                        <ul>
+                          {currentIntelligence.result.risks.map((risk) => (
+                            <li key={risk.evidenceId}>{risk.text}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p>No clear risk was identified in the supplied evidence.</p>
+                      )}
                     </div>
                   </div>
                   <p className="research-intelligence-disclosure">

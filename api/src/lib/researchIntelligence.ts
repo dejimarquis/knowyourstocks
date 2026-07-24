@@ -54,8 +54,8 @@ export const researchIntelligenceResponseSchema = z.object({
   score: z.number().int().min(0).max(100),
   opinion: opinionSchema,
   summary: z.string().min(1).max(300),
-  strengths: z.array(mappedEvidenceSchema).min(1).max(3),
-  risks: z.array(mappedEvidenceSchema).min(1).max(3),
+  strengths: z.array(mappedEvidenceSchema).max(3),
+  risks: z.array(mappedEvidenceSchema).max(3),
   confidence: confidenceSchema,
 })
 
@@ -84,7 +84,7 @@ const normalizeResearchOutput = (
     score,
   )
   const summary = pick(record, ['summary', 'Summary', 'assessment'])
-  const strengths = catalog.resolveIds(
+  let strengths = catalog.resolveIds(
     pick(record, [
       'strengthEvidenceIds',
       'StrengthEvidenceIds',
@@ -93,7 +93,7 @@ const normalizeResearchOutput = (
     ]),
     { min: 1, max: 3 },
   )
-  const risks = catalog.resolveIds(
+  let risks = catalog.resolveIds(
     pick(record, [
       'riskEvidenceIds',
       'RiskEvidenceIds',
@@ -118,6 +118,31 @@ const normalizeResearchOutput = (
   ) {
     throw new Error('Model returned misattached evidence IDs.')
   }
+
+  const riskLanguage = /\b(weakens|mixed|unavailable|uncertainty|risk|extremely high)\b/i
+  const misplacedRisks = strengths.filter((item) =>
+    riskLanguage.test(item.text),
+  )
+  strengths = strengths.filter((item) => !riskLanguage.test(item.text))
+  risks = [...risks, ...misplacedRisks].filter(
+    (item, index, values) =>
+      values.findIndex((candidate) => candidate.id === item.id) === index,
+  )
+
+  if (strengths.length === 0) {
+    const fallback = request.evidence.find(
+      (item) => !riskLanguage.test(item.text),
+    )
+    if (fallback) strengths = [fallback]
+  }
+  if (risks.length === 0) {
+    const fallback = request.evidence.find((item) =>
+      riskLanguage.test(item.text),
+    )
+    if (fallback) risks = [fallback]
+  }
+  strengths = strengths.slice(0, 3)
+  risks = risks.slice(0, 3)
 
   assertNoProhibitedAdvice([summary])
   assertNoInventedNumericClaims(summary, [...strengths, ...risks])

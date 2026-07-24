@@ -14,11 +14,11 @@ Finnhub `epsGrowthTTMYoy` is now the earnings-growth source. Operating margin, f
 
 SEC EDGAR remains a selective missing-fundamentals fallback. It does not overwrite available provider values or supply quotes.
 
-## AI requires an explicit user action
+## Research AI appears whenever a stock result is visible
 
-Research Search/Refresh, Discover refresh, and requested Watchlist review are the only AI triggers. Loading cached Research or Discover state does not spend model quota.
+Research automatically loads a matching cached AI take, or requests one when a cached stock result is restored without an AI result. Search and Refresh update the stock and AI take together. Discover refresh and Watchlist review remain explicit actions.
 
-Matching six-hour caches may satisfy a request after an explicit action. This preserves responsiveness without turning passive browsing into model usage.
+Six-hour caches avoid repeated model calls for the same stock, thesis, and evidence.
 
 ## Discover is a manual hybrid shortlist
 
@@ -60,7 +60,7 @@ The $25 Azure budget remains useful as an alert, but it is not a Foundry circuit
 
 The thesis, watchlist, snapshots, briefs, and caches remain browser-local. The Finnhub key remains in `sessionStorage` and never enters intelligence APIs.
 
-After an explicit AI action, structured thesis fields, any non-empty free-text thesis note, and compact evidence are sent to Foundry. The note is included automatically because it materially improves thesis-aware analysis. Passive page loads still make no AI request. Watchlist v2 necessarily includes the watched symbols and compact current/previous evidence so every stock can be assessed.
+When Research AI loads, or after a Discover/Watchlist AI action, structured thesis fields, any non-empty free-text thesis note, and compact evidence are sent to Foundry. The note is included automatically because it materially improves thesis-aware analysis. A restored cached Research result may therefore send the note if no matching AI cache exists. Watchlist v2 necessarily includes the watched symbols and compact current/previous evidence so every stock can be assessed.
 
 ## Azure deployment remains intentionally small
 

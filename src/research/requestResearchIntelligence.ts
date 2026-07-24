@@ -6,6 +6,10 @@ import type { FitScore } from '../scoring/scoreSecurity'
 const cachePrefix = 'knowyourstocks.researchIntelligence.v1'
 const clientStorageKey = 'knowyourstocks.intelligenceClient'
 const cacheLifetimeMs = 6 * 60 * 60 * 1000
+const inFlightRequests = new Map<
+  string,
+  Promise<ResearchIntelligenceResult>
+>()
 
 const evidenceSchema = z.object({
   id: z.string(),
@@ -96,7 +100,11 @@ const metricDefinitions: Array<{
   format: (value: number) => string
 }> = [
   { key: 'marketCap', label: 'Market capitalization', format: formatCurrency },
-  { key: 'peRatio', label: 'Trailing price-to-earnings ratio', format: formatNumber },
+  {
+    key: 'peRatio',
+    label: 'Trailing price-to-earnings ratio',
+    format: (value) => (value > 500 ? 'over 500' : formatNumber(value)),
+  },
   { key: 'priceToBook', label: 'Price-to-book ratio', format: formatNumber },
   { key: 'dividendYield', label: 'Dividend yield', format: formatPercent },
   { key: 'eps', label: 'Trailing earnings per share', format: formatCurrency },
@@ -123,6 +131,16 @@ const researchMetricKeys = new Set<keyof SecuritySnapshot>([
   'debtToEquity',
   'currentRatio',
 ])
+
+const factorMeaning: Record<string, string> = {
+  sector: 'Theme match',
+  quality: 'Profitability',
+  growth: 'Growth',
+  resilience: 'Company size',
+  valuation: 'Valuation',
+  risk: 'Risk fit',
+  preference: 'Investing style',
+}
 
 const provenanceText = (
   security: SecuritySnapshot,
@@ -157,19 +175,47 @@ export const createResearchIntelligenceRequest = (
         },
       ]
     })
-  const selectedFactorKeys = ['quality', 'growth', 'valuation', 'risk']
-  const selectedFactors = selectedFactorKeys.flatMap((key) => {
-    const factor = fit.factors.find((candidate) => candidate.key === key)
-    return factor ? [factor] : []
-  })
+  const availableFactors = fit.factors.filter((factor) => factor.available)
+  const supportingFactors = availableFactors
+    .filter((factor) => factor.earned / factor.maximum >= 0.7)
+    .sort(
+      (left, right) =>
+        right.earned / right.maximum - left.earned / left.maximum,
+    )
+    .slice(0, 2)
+  const mixedFactors = availableFactors
+    .filter((factor) => {
+      const ratio = factor.earned / factor.maximum
+      return ratio >= 0.5 && ratio < 0.7
+    })
+    .slice(0, 1)
+  const conflictingFactors = availableFactors
+    .filter((factor) => factor.earned / factor.maximum < 0.5)
+    .sort(
+      (left, right) =>
+        left.earned / left.maximum - right.earned / right.maximum,
+    )
+    .slice(0, 3)
+  const selectedFactors = [
+    ...supportingFactors,
+    ...mixedFactors,
+    ...conflictingFactors,
+  ].filter(
+    (factor, index, values) =>
+      values.findIndex((candidate) => candidate.key === factor.key) === index,
+  )
   const fitEvidence = selectedFactors.map((factor) => ({
     id: `fit:${factor.key}`,
     symbol: security.symbol,
-    text: `Deterministic Fit factor "${factor.label}" ${
-      factor.available
-        ? `earned ${formatNumber(factor.earned)} of ${formatNumber(factor.maximum)}`
-        : 'was unavailable'
-    }. ${factor.evidence}`,
+    text: `${factorMeaning[factor.key] ?? factor.label} ${
+      !factor.available
+        ? 'is unavailable'
+        : factor.earned / factor.maximum >= 0.7
+          ? 'supports your thesis'
+          : factor.earned / factor.maximum < 0.5
+            ? 'weakens the thesis fit'
+            : 'is mixed'
+    }: ${factor.evidence}`,
   }))
 
   return {
@@ -191,7 +237,7 @@ export const createResearchIntelligenceRequest = (
       total: fit.total,
       label: fit.label,
     },
-    evidence: [...metricEvidence, ...fitEvidence].slice(0, 12),
+    evidence: [...metricEvidence, ...fitEvidence].slice(0, 14),
   }
 }
 
@@ -285,22 +331,35 @@ export const requestResearchIntelligence = async (
     return cached
   }
 
-  const response = await fetch('/api/research-intelligence', {
-    method: 'POST',
-    signal,
-    headers: {
-      'Content-Type': 'application/json',
-      'x-intelligence-client': getClientId(),
-    },
-    body: JSON.stringify(request),
-  })
-
-  if (!response.ok) {
-    throw new Error(`Research intelligence returned HTTP ${response.status}.`)
+  const cacheKey = researchIntelligenceCacheKey(request)
+  const inFlight = inFlightRequests.get(cacheKey)
+  if (inFlight) {
+    return inFlight
   }
 
-  const intelligence = responseSchema.parse(await response.json())
-  const fetchedAt = Date.now()
-  writeCache(request, intelligence, fetchedAt)
-  return { ...intelligence, fetchedAt, source: 'network' }
+  const pending = (async () => {
+    const response = await fetch('/api/research-intelligence', {
+      method: 'POST',
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'x-intelligence-client': getClientId(),
+      },
+      body: JSON.stringify(request),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Research intelligence returned HTTP ${response.status}.`)
+    }
+
+    const intelligence = responseSchema.parse(await response.json())
+    const fetchedAt = Date.now()
+    writeCache(request, intelligence, fetchedAt)
+    return { ...intelligence, fetchedAt, source: 'network' as const }
+  })().finally(() => {
+    inFlightRequests.delete(cacheKey)
+  })
+
+  inFlightRequests.set(cacheKey, pending)
+  return pending
 }

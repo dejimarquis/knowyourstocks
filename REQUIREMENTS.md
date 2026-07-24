@@ -15,8 +15,8 @@ Build a minimalist, beginner-first educational tool for researching US common st
 | Thesis | Guided structured fields plus an optional private note |
 | Authoritative score | Deterministic 0–100 thesis Fit with factor evidence |
 | AI output | Separate thesis-evidence assessment, never a return forecast |
-| AI triggers | Explicit Research Search/Refresh, Discover refresh, or requested Watchlist review |
-| Cached page load | Must not initiate an AI request |
+| AI triggers | Visible Research result without a matching AI cache, Discover refresh, or requested Watchlist review |
+| Cached page load | Research may request AI when its AI cache is missing; Discover and Watchlist remain passive |
 | Watchlist | Browser-local, up to 25 stocks |
 | Reviews | Manual; the UI marks the first visit in a new week as due but does not run automatically |
 | Alerts | In-app review signals only; no email, SMS, push, or background notification |
@@ -32,12 +32,12 @@ Build a minimalist, beginner-first educational tool for researching US common st
 - Distinguish missing data from poor performance.
 - Never invent provider values, candidate symbols, evidence, or model output.
 - Never describe Fit or AI evidence scores as expected-return predictions.
-- Do not call AI on passive page loads.
+- Do not call Discover or Watchlist AI on passive page loads. Research should make its AI take available whenever a stock result is visible.
 - Fall back to complete deterministic behavior when any provider or model step fails.
 
 ## Research
 
-An explicit Search or Refresh:
+When a stock result is visible, Research:
 
 1. obtains a real provider snapshot;
 2. selectively fills missing fundamentals from SEC EDGAR;
@@ -55,7 +55,7 @@ The research page shows:
 - one of `Compelling`, `Promising but mixed`, `Watch closely`, or `Reconsider`;
 - grounded strengths, risks or gaps, confidence, cache/freshness status, and unavailable fallback.
 
-The AI score measures support in the supplied evidence. It does not replace Fit, alter Fit factors, recommend a trade, or predict returns. Loading the six-hour cached security on page load must not request AI. A later explicit Search or Refresh may reuse a matching six-hour AI cache entry instead of making a new Foundry call.
+The AI score measures support in the supplied evidence. It does not replace Fit, alter Fit factors, recommend a trade, or predict returns. A restored cached security reuses a matching six-hour AI cache or requests a new take when that AI cache is missing.
 
 ## Fundamental data and provenance
 
@@ -175,7 +175,7 @@ Versioned browser storage may contain:
 
 The Finnhub key stays in `sessionStorage` and goes directly to Finnhub. It must not enter the managed intelligence APIs.
 
-Structured thesis fields and any non-empty free-text thesis note are sent to Foundry only after an explicit AI-triggering action. The note is included automatically to improve thesis-aware analysis; passive page loads do not send it. See `SECURITY.md` for packet details.
+Structured thesis fields and any non-empty free-text thesis note are sent to Foundry when Research AI loads or after an explicit Discover/Watchlist AI action. The note is included automatically to improve thesis-aware analysis. See `SECURITY.md` for packet details.
 
 ## Azure architecture and cost
 
@@ -209,7 +209,7 @@ This arrangement does not grant rights to redistribute centrally licensed live m
 
 Run the existing lint, web tests, API tests, browser tests, and builds. In addition, complete hands-on local browser testing for:
 
-- explicit Research Search/Refresh and no AI on cached page load;
+- automatic Research AI for visible stock results with six-hour cache reuse;
 - separate deterministic Fit and AI assessment;
 - Discover manual refresh, exclusions, limits, partial results, and fallback;
 - Watchlist business-first signals and absence of a standalone daily-move alert;

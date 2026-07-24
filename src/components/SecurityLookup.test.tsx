@@ -192,15 +192,15 @@ describe('SecurityLookup', () => {
 
     expect(await screen.findByText('Fit')).toBeInTheDocument()
     expect(
-      await screen.findByText('AI assessment unavailable'),
+      await screen.findByText('AI take could not load'),
     ).toBeInTheDocument()
     expect(screen.getByText('Fit')).toBeInTheDocument()
     expect(
-      screen.queryByText('AI thesis-evidence score'),
+      screen.queryByText('AI evidence score'),
     ).not.toBeInTheDocument()
   })
 
-  it('does not request AI merely because cached research is present', () => {
+  it('automatically requests AI when cached research is present', async () => {
     window.localStorage.setItem(
       'knowyourstocks.lastSecurity.v2',
       JSON.stringify({
@@ -231,7 +231,9 @@ describe('SecurityLookup', () => {
         },
       }),
     )
-    const fetchMock = vi.fn()
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(intelligenceResponse))
     const onSecurityResearched = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
@@ -245,14 +247,11 @@ describe('SecurityLookup', () => {
     expect(
       screen.getByText('International Business Machines'),
     ).toBeInTheDocument()
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(await screen.findByText('AI evidence score')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledOnce()
     expect(onSecurityResearched).toHaveBeenCalledWith(
       expect.objectContaining({ symbol: 'IBM' }),
     )
-    expect(screen.getByText('AI assessment not requested')).toBeInTheDocument()
-    expect(
-      screen.queryByText('AI thesis-evidence score'),
-    ).not.toBeInTheDocument()
   })
 
   it('shows the separate grounded AI score, evidence, confidence, and disclosure', async () => {
@@ -277,7 +276,7 @@ describe('SecurityLookup', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
 
     expect(
-      await screen.findByText('AI thesis-evidence score'),
+      await screen.findByText('AI evidence score'),
     ).toBeInTheDocument()
     expect(screen.getByLabelText('78 out of 100')).toBeInTheDocument()
     expect(screen.getByText('Promising but mixed')).toBeInTheDocument()
@@ -286,7 +285,7 @@ describe('SecurityLookup', () => {
     expect(
       screen.getByText(/Model: Azure AI Foundry grounded assessment/),
     ).toBeInTheDocument()
-    expect(screen.getByText(/neither score predicts returns/i)).toBeInTheDocument()
+    expect(screen.getByText(/does not predict returns/i)).toBeInTheDocument()
   })
 
   it('ignores a stale AI response after a new security search', async () => {

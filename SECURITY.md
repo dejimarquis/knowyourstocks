@@ -23,15 +23,15 @@ The structured thesis, optional note, watchlist, snapshots, Fits, briefs, cached
 
 Do not enter account numbers, holdings, passwords, or other sensitive financial information in the optional thesis note.
 
-## Explicit AI triggers
+## AI request behavior
 
-The application calls Azure Foundry only after an explicit action:
+The application calls Azure Foundry in these cases:
 
-- Research **Search** or **Refresh**;
+- a Research result is visible and no matching six-hour AI cache exists, including a restored cached stock;
 - Discover **Refresh ideas**;
 - Watchlist **Review**, when Phi is enabled.
 
-Loading a cached Research or Discover page does not initiate an AI request. A matching cached AI result may be displayed or reused after an explicit action.
+Discover does not run on page load. Watchlist does not run without Review. Research reuses a matching AI cache first and requests a new take only when needed.
 
 ## Intelligence packets
 
@@ -46,7 +46,7 @@ Research sends:
 - deterministic Fit total and label;
 - compact metric and Fit evidence with source/period provenance.
 
-Any non-empty free-text thesis note is sent automatically after the user explicitly searches or refreshes Research. Passive page loads do not send it.
+Any non-empty free-text thesis note is sent automatically when Research AI is requested. This can occur after Search/Refresh or when a cached stock is restored without a matching AI cache.
 
 ### Discover
 

@@ -84,6 +84,9 @@ test('researches a stock and explains its thesis fit', async ({ page }) => {
   ).toBeVisible()
   await expect(page.locator('.price-line strong')).toHaveText('$206.50')
   await expect(page.locator('.fit-panel > strong')).toHaveText('93')
+  await expect(page.getByText('AI evidence score')).toBeVisible()
+  await expect(page.getByText('What the evidence suggests')).toBeVisible()
+  await expect(page.getByText(/does not predict returns/i)).toBeVisible()
   await expect(page.getByLabel('82 out of 100')).toBeVisible()
   await expect(page.getByText('Compelling', { exact: true })).toBeVisible()
   await expect(page.locator('.data-trust-line')).toContainText(

@@ -13,15 +13,15 @@ Deterministic code is authoritative for:
 
 Azure Foundry is a separate, best-effort evidence reviewer. It can score how strongly supplied evidence supports a thesis, rank only supplied Discover candidates, assess each supplied Watchlist stock, prioritize verified signals, and connect verified cross-stock evidence. It cannot create market facts, change deterministic values, predict returns, or issue trade instructions.
 
-## User-trigger contract
+## AI request contract
 
-AI runs only after:
+AI runs when:
 
-- an explicit Research Search or Refresh;
+- a Research result is visible without a matching six-hour AI cache;
 - an explicit Discover refresh;
 - a requested Watchlist review when Phi is enabled.
 
-Cached page load does not call AI. The deterministic result is available independently of model success.
+Research reuses a matching AI cache first and requests a new take when needed. Discover and Watchlist remain passive until their explicit actions. The deterministic result is available independently of model success.
 
 ## Operation contracts
 
@@ -94,7 +94,7 @@ The selection therefore reflects end-to-end reliability under the application's 
 
 Finnhub now contributes corrected `epsGrowthTTMYoy`, operating margin, free cash flow, debt-to-equity, and current ratio. Evidence includes metric-level source, as-of date when known, and period. SEC fills only supported missing values and carries filing-date provenance.
 
-Research, Discover, and Watchlist automatically include any non-empty free-text thesis note after the user explicitly triggers the AI operation. Passive page loads do not send it. No operation receives the Finnhub key or raw provider payloads.
+Research, Discover, and Watchlist automatically include any non-empty free-text thesis note when their AI request runs. A restored cached Research result may request AI and send the note when no matching AI cache exists. No operation receives the Finnhub key or raw provider payloads.
 
 ## Cost and failure behavior
 

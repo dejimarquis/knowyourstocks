@@ -154,4 +154,44 @@ describe('generateResearchIntelligence', () => {
       generateResearchIntelligence(request, 'research-number'),
     ).rejects.toThrow('invented numeric claim')
   })
+
+  it('moves clearly negative evidence out of strengths', async () => {
+    const mixedRequest = parseResearchIntelligenceRequest({
+      ...request,
+      evidence: [
+        {
+          id: 'growth',
+          symbol: 'MSFT',
+          text: 'Growth supports the thesis.',
+        },
+        {
+          id: 'profitability',
+          symbol: 'MSFT',
+          text: 'Profitability weakens the thesis fit.',
+        },
+      ],
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        modelResponse({
+          ...validOutput,
+          StrengthEvidenceIds: [1, 2],
+          RiskEvidenceIds: [2],
+        }),
+      ),
+    )
+
+    const output = await generateResearchIntelligence(
+      mixedRequest,
+      'research-reclassify',
+    )
+
+    expect(output.strengths.map((item) => item.evidenceId)).toEqual([
+      'growth',
+    ])
+    expect(output.risks.map((item) => item.evidenceId)).toContain(
+      'profitability',
+    )
+  })
 })
