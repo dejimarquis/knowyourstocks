@@ -480,7 +480,9 @@ export const generateWatchlistIntelligence = async (
     operation: 'watchlist',
     request,
     clientId,
-    maxTokens: 1600,
+    maxTokens: Math.min(1600, 220 + symbols.length * 50),
+    attemptTimeoutMs: 18_000,
+    regenerateInvalidOutput: false,
     systemPrompt:
       'Review every supplied watchlist stock using only supplied evidence aliases. Include stable stocks. Prioritize business evidence over price movement. Select evidence; the server maps user-facing prose. Do not give trade instructions or predict returns.',
     userPrompt: `Thesis: ${request.thesis.style}; ${request.thesis.horizon}; ${request.thesis.risk}; sectors ${request.thesis.sectors.join(', ')}

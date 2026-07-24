@@ -148,6 +148,8 @@ export const generateResearchIntelligence = async (
     request,
     clientId,
     maxTokens: 360,
+    attemptTimeoutMs: 10_000,
+    regenerateInvalidOutput: true,
     systemPrompt:
       'Assess how strongly supplied evidence supports the supplied thesis. The score is not a return forecast. Use only supplied evidence aliases and supported opinion labels. Do not give trade instructions or add numeric claims to narratives.',
     userPrompt: `Symbol: ${request.symbol}

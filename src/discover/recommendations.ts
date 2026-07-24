@@ -160,14 +160,24 @@ const deterministicRisk = (candidate: IntelligenceCandidate) => {
 
 const evidenceFor = (candidate: IntelligenceCandidate) => {
   const symbol = candidate.snapshot.symbol
-  const evidence = candidate.fit.factors
+  const factors = candidate.fit.factors
     .filter((factor) => factor.available)
-    .slice(0, 5)
+    .sort(
+      (left, right) =>
+        right.earned / right.maximum - left.earned / left.maximum,
+    )
+  const evidence = factors
+    .slice(0, 3)
     .map((factor, index) => ({
       id: `${symbol.toLowerCase()}-${factor.key}-${index}`,
       symbol,
-      text: `${factor.label}: ${factor.evidence}`,
+      text: `Supporting evidence — ${factor.label}: ${factor.evidence}`,
     }))
+  evidence.push({
+    id: `${symbol.toLowerCase()}-risk-gap`,
+    symbol,
+    text: `Main risk or gap: ${deterministicRisk(candidate)}`,
+  })
 
   return evidence.length > 0
     ? evidence

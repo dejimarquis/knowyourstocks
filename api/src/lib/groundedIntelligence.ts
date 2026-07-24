@@ -402,6 +402,8 @@ type ModelCallOptions<T> = {
   systemPrompt: string
   userPrompt: string
   maxTokens: number
+  attemptTimeoutMs?: number
+  regenerateInvalidOutput?: boolean
   normalize: (value: unknown) => T
 }
 
@@ -432,7 +434,17 @@ export const callGroundedModel = async <T>(
   const url = `${settings.endpoint.replace(/\/$/, '')}/openai/deployments/${encodeURIComponent(settings.deployment)}/chat/completions?api-version=2024-10-21`
   let lastOutputError: unknown
 
-  for (let outputAttempt = 0; outputAttempt < 2; outputAttempt += 1) {
+  const outputAttempts = options.regenerateInvalidOutput === false ? 1 : 2
+  const attemptTimeoutMs = Math.min(
+    settings.timeoutMs,
+    options.attemptTimeoutMs ?? settings.timeoutMs,
+  )
+
+  for (
+    let outputAttempt = 0;
+    outputAttempt < outputAttempts;
+    outputAttempt += 1
+  ) {
     const response = await fetchFoundry(
       url,
       settings.key,
@@ -448,7 +460,7 @@ export const callGroundedModel = async <T>(
         max_tokens: options.maxTokens,
         response_format: { type: 'json_object' },
       },
-      settings.timeoutMs,
+      attemptTimeoutMs,
     )
     let body: {
       choices?: Array<{ message?: { content?: string } }>
@@ -477,7 +489,7 @@ export const callGroundedModel = async <T>(
       return normalized
     } catch (error) {
       lastOutputError = error
-      if (outputAttempt === 0) {
+      if (outputAttempt < outputAttempts - 1) {
         await wait(100)
         continue
       }

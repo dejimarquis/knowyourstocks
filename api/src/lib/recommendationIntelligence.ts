@@ -304,6 +304,8 @@ export const generateRecommendationIntelligence = async (
     request,
     clientId,
     maxTokens: 450,
+    attemptTimeoutMs: 18_000,
+    regenerateInvalidOutput: false,
     systemPrompt:
       'Rank only supplied candidates for thesis-evidence fit. Use only supplied evidence aliases. Do not give trade instructions, predict returns, or add numeric claims to narratives.',
     userPrompt: `Thesis: ${request.thesis.style}; ${request.thesis.horizon}; ${request.thesis.risk}; sectors ${request.thesis.sectors.join(', ')}
