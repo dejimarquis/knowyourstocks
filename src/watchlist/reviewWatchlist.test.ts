@@ -17,11 +17,6 @@ vi.mock('../data/finnhub', () => ({
   fetchFinnhubEarningsCalendar: vi.fn(
     async () => new Map([['TEST', '2026-07-30']]),
   ),
-  fetchFinnhubSentiment: vi.fn(async () => ({
-    score: 0.25,
-    articleCount: 8,
-    source: 'Finnhub',
-  })),
 }))
 
 vi.mock('../data/sec', () => ({
@@ -58,7 +53,7 @@ describe('reviewWatchlist', () => {
     vi.clearAllMocks()
   })
 
-  it('preserves the previous snapshot and adds review context', async () => {
+  it('preserves the previous snapshot and adds earnings context', async () => {
     const item = createWatchlistItem(
       snapshot,
       scoreSecurity(snapshot, defaultThesis),
@@ -76,7 +71,7 @@ describe('reviewWatchlist', () => {
     expect(reviewedItem.previousSnapshot?.price).toBe(100)
     expect(reviewedItem.currentSnapshot.price).toBe(110)
     expect(reviewedItem.earningsDate).toBe('2026-07-30')
-    expect(reviewedItem.sentiment?.score).toBe(0.25)
+    expect(reviewedItem.sentiment).toBeNull()
     expect(reviewedItem.reviewError).toBeNull()
   })
 

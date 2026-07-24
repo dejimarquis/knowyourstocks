@@ -32,6 +32,8 @@ The review engine emphasizes growth, margins, cash flow, leverage, liquidity, va
 
 Every requested Phi review receives evidence for every watched stock, including stable stocks, and must return one assessment per stock. This avoids equating “no deterministic change” with “not reviewed.”
 
+Automatic Finnhub news-sentiment refresh is disabled because the optional endpoint returns HTTP 403 for common free personal keys. Previously stored sentiment remains readable, and sentiment can return when a licensed source is available.
+
 ## One shared grounded API protects all operations
 
 Research, recommendations, and Watchlist share operation-specific schemas, output normalization, evidence alias resolution, symbol attachment checks, advice and numeric-claim guards, bounded retry, six-hour process cache, process-local rate limits, timeouts, token ceilings, and deterministic fallback.

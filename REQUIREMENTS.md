@@ -109,9 +109,9 @@ Deterministic review signals are business-first:
 - earnings within 14 days;
 - stale or failed data;
 - concentration;
-- supported headline-sentiment context.
+- previously stored or future licensed headline-sentiment context.
 
-There is no standalone daily-move alert. A large latest-day move may appear only as context attached to a business, filing, or earnings signal. Headline sentiment is context, not business evidence.
+There is no standalone daily-move alert. A large latest-day move may appear only as context attached to a business, filing, or earnings signal. Headline sentiment is context, not business evidence. Automatic Finnhub sentiment refresh is deferred because common free personal keys receive HTTP 403 for that optional endpoint.
 
 When Phi is enabled, every requested review sends compact current and previous evidence for every watched stock, including stocks with no deterministic change signal. A valid response must assess every supplied stock exactly once and may also prioritize verified signals and identify cross-stock patterns supported by evidence from at least two distinct symbols.
 

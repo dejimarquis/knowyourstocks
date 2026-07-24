@@ -1,6 +1,5 @@
 import {
   fetchFinnhubEarningsCalendar,
-  fetchFinnhubSentiment,
   refreshFinnhubSecurity,
 } from '../data/finnhub'
 import { enrichWithSecFallback } from '../data/sec'
@@ -9,7 +8,6 @@ import type { Watchlist, WatchlistItem } from '../domain/watchlist'
 import { scoreSecurity } from '../scoring/scoreSecurity'
 
 const reviewConcurrency = 3
-const sentimentLimit = 3
 const reviewCooldownMs = 60_000
 
 const dateOnly = (date: Date) => date.toISOString().slice(0, 10)
@@ -18,41 +16,6 @@ const addDays = (date: Date, days: number) => {
   const result = new Date(date)
   result.setUTCDate(result.getUTCDate() + days)
   return result
-}
-
-const changeMagnitude = (
-  current: number | null | undefined,
-  previous: number | null | undefined,
-) =>
-  current == null || previous == null ? 0 : Math.abs(current - previous)
-
-const sentimentPriority = (item: WatchlistItem) => {
-  const fitConcern =
-    item.currentFit.total == null ? 0 : Math.max(0, 60 - item.currentFit.total)
-  const previous = item.previousSnapshot
-
-  if (!previous) {
-    return fitConcern
-  }
-
-  return (
-    fitConcern +
-    changeMagnitude(
-      item.currentSnapshot.revenueGrowth,
-      previous.revenueGrowth,
-    ) *
-      100 +
-    changeMagnitude(
-      item.currentSnapshot.earningsGrowth,
-      previous.earningsGrowth,
-    ) *
-      100 +
-    changeMagnitude(
-      item.currentSnapshot.profitMargin,
-      previous.profitMargin,
-    ) *
-      100
-  )
 }
 
 const mapWithConcurrency = async <Input, Output>(
@@ -150,29 +113,14 @@ export const reviewWatchlist = async (
     dateOnly(now),
     dateOnly(addDays(now, 14)),
   ).catch(() => new Map<string, string>())
-  const sentimentCandidates = [...refreshedItems]
-    .filter((item) => item.reviewError == null)
-    .sort((left, right) => sentimentPriority(right) - sentimentPriority(left))
-    .slice(0, sentimentLimit)
-  const sentiments = new Map(
-    await mapWithConcurrency(sentimentCandidates, 2, async (item) => [
-      item.symbol,
-      await fetchFinnhubSentiment(item.symbol, key),
-    ] as const),
-  )
 
   return {
     ...watchlist,
     lastReviewAt: reviewedAt,
     items: refreshedItems.map((item) => {
-      const sentiment = sentiments.get(item.symbol)
       return {
         ...item,
         earningsDate: earnings.get(item.symbol) ?? null,
-        previousSentiment: item.sentiment,
-        sentiment: sentiment
-          ? { ...sentiment, asOf: reviewedAt }
-          : item.sentiment,
       }
     }),
   }
