@@ -39,7 +39,7 @@ const security: SecuritySnapshot = {
 }
 
 const result: DiscoverResult = {
-  version: 1,
+  version: 2,
   universeVersion: 1,
   generatedAt: '2026-07-23T20:00:00.000Z',
   modelStatus: 'fallback',
@@ -53,11 +53,12 @@ const result: DiscoverResult = {
         factors: [],
         missing: [],
       },
-      reason: 'The deterministic evidence supports thesis fit.',
-      risk: 'Beta is near the market baseline.',
-      aiScore: null,
-      aiOpinion: null,
-      aiConfidence: null,
+      opinion: null,
+      thesisRationale: 'The deterministic evidence supports thesis fit.',
+      mainConcern: 'Beta is near the market baseline.',
+      whatToResearchNext: 'Review the latest filing and valuation context.',
+      confidence: null,
+      citations: [],
     },
   ],
 }
@@ -100,7 +101,9 @@ describe('DiscoverPanel', () => {
 
     expect(await screen.findByText('Microsoft')).toBeInTheDocument()
     expect(discoverMock).toHaveBeenCalledTimes(1)
-    expect(screen.getByText('Deterministic fallback')).toBeInTheDocument()
+    expect(
+      screen.getByText('Model unavailable · deterministic fallback'),
+    ).toBeInTheDocument()
     expect(screen.getByText(/Showing partial results/)).toBeInTheDocument()
   })
 
@@ -127,5 +130,80 @@ describe('DiscoverPanel', () => {
       security,
       result.recommendations[0].fit,
     )
+  })
+
+  it('renders opinion details, confidence, and citations without an AI score', async () => {
+    discoverMock.mockResolvedValue({
+      ...result,
+      modelStatus: 'generated',
+      recommendations: [
+        {
+          ...result.recommendations[0],
+          opinion: 'Fits thesis',
+          thesisRationale: 'Durable growth supports the thesis.',
+          mainConcern: 'Valuation evidence remains demanding.',
+          whatToResearchNext: 'Review margin durability in the next filing.',
+          confidence: 'high',
+          citations: [
+            {
+              evidenceId: 'msft-quality-0',
+              symbol: 'MSFT',
+              text: 'Quality evidence is available.',
+            },
+          ],
+        },
+      ],
+    })
+
+    render(<DiscoverPanel {...props} finnhubKey="key" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh ideas' }))
+
+    expect(await screen.findByText('Fits thesis')).toBeInTheDocument()
+    expect(screen.getByText('high confidence')).toBeInTheDocument()
+    expect(screen.getByText('What to research next')).toBeInTheDocument()
+    expect(screen.queryByText(/AI evidence/i)).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Sources (1)'))
+    expect(screen.getByText('Quality evidence is available.')).toBeInTheDocument()
+  })
+
+  it('keeps deterministic cards usable when the model limit is reached', async () => {
+    discoverMock.mockResolvedValue({ ...result, modelStatus: 'rate_limited' })
+    render(<DiscoverPanel {...props} finnhubKey="key" />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh ideas' }))
+
+    expect(await screen.findByText('Microsoft')).toBeInTheDocument()
+    expect(
+      screen.getByText('Model limit reached · deterministic fallback'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Deterministic comparison')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Research' })).toBeEnabled()
+  })
+
+  it('ignores a stale refresh after the thesis fingerprint changes', async () => {
+    let resolveResult: (value: DiscoverResult) => void = () => undefined
+    discoverMock.mockImplementation(
+      () =>
+        new Promise<DiscoverResult>((resolve) => {
+          resolveResult = resolve
+        }),
+    )
+    const rendered = render(
+      <DiscoverPanel {...props} finnhubKey="key" thesis={defaultThesis} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh ideas' }))
+
+    rendered.rerender(
+      <DiscoverPanel
+        {...props}
+        finnhubKey="key"
+        thesis={{ ...defaultThesis, style: 'value' }}
+      />,
+    )
+    resolveResult(result)
+
+    await Promise.resolve()
+    expect(screen.queryByText('Microsoft')).not.toBeInTheDocument()
   })
 })

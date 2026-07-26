@@ -3,6 +3,16 @@ import type { SecuritySnapshot } from '../data/alphaVantage'
 import { fetchFinnhubPeers, fetchFinnhubSecurity } from '../data/finnhub'
 import { enrichWithSecFallback } from '../data/sec'
 import type { InvestmentThesis } from '../domain/thesis'
+import {
+  citationSchema,
+  confidenceSchema,
+  IntelligenceApiError,
+  intelligenceErrorFromResponse,
+  opinionSchema,
+  type Citation,
+  type Confidence,
+  type Opinion,
+} from '../intelligence/contracts'
 import { scoreSecurity, type FitScore } from '../scoring/scoreSecurity'
 import {
   discoverUniverse,
@@ -15,39 +25,44 @@ const recommendationCount = 5
 const maximumSecEnrichments = 3
 const clientStorageKey = 'knowyourstocks.intelligenceClient'
 
-const intelligenceResponseSchema = z.object({
-  rankings: z.array(
-    z.object({
-      symbol: z.string(),
-      score: z.number().int().min(0).max(100),
-      opinion: z.enum([
-        'Compelling',
-        'Promising but mixed',
-        'Watch closely',
-        'Reconsider',
-      ]),
-      confidence: z.enum(['low', 'medium', 'high']),
-      rationale: z.string(),
-      risk: z.string(),
-    }),
-  ),
-})
+const intelligenceResponseSchema = z
+  .object({
+    rankings: z
+      .array(
+        z
+          .object({
+            symbol: z.string(),
+            opinion: opinionSchema,
+            thesisRationale: z.string().min(1).max(300),
+            mainConcern: z.string().min(1).max(240),
+            whatToResearchNext: z.string().min(1).max(240),
+            confidence: confidenceSchema,
+            citationIds: z.array(z.string()).min(1).max(5),
+            citations: z.array(citationSchema).min(1).max(5),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(8),
+  })
+  .strict()
 
 export type DiscoverRecommendation = {
   snapshot: SecuritySnapshot
   fit: FitScore
-  reason: string
-  risk: string
-  aiScore: number | null
-  aiOpinion: string | null
-  aiConfidence: 'low' | 'medium' | 'high' | null
+  opinion: Opinion | null
+  thesisRationale: string
+  mainConcern: string
+  whatToResearchNext: string
+  confidence: Confidence | null
+  citations: Citation[]
 }
 
 export type DiscoverResult = {
-  version: 1
+  version: 2
   universeVersion: number
   generatedAt: string
-  modelStatus: 'generated' | 'fallback' | 'not_requested'
+  modelStatus: 'generated' | 'fallback' | 'rate_limited' | 'not_requested'
   recommendations: DiscoverRecommendation[]
   providerErrors: number
 }
@@ -241,7 +256,7 @@ export const requestRecommendationIntelligence = async (
   })
 
   if (!response.ok) {
-    throw new Error(`Recommendation intelligence returned HTTP ${response.status}.`)
+    throw await intelligenceErrorFromResponse(response)
   }
 
   const intelligence = intelligenceResponseSchema.parse(await response.json())
@@ -350,11 +365,13 @@ export const discoverRecommendations = async (
   let recommendations: DiscoverRecommendation[] = candidates.map((candidate) => ({
     snapshot: candidate.snapshot,
     fit: candidate.fit,
-    reason: deterministicReason(candidate),
-    risk: deterministicRisk(candidate),
-    aiScore: null,
-    aiOpinion: null,
-    aiConfidence: null,
+    opinion: null,
+    thesisRationale: deterministicReason(candidate),
+    mainConcern: deterministicRisk(candidate),
+    whatToResearchNext:
+      'Review the latest filing, valuation context, and company-specific catalysts before drawing a conclusion.',
+    confidence: null,
+    citations: [],
   }))
 
   if (candidates.length === recommendationCount) {
@@ -376,21 +393,26 @@ export const discoverRecommendations = async (
         }
         return {
           ...recommendation,
-          reason: ranking.rationale,
-          risk: ranking.risk,
-          aiScore: ranking.score,
-          aiOpinion: ranking.opinion,
-          aiConfidence: ranking.confidence,
+          opinion: ranking.opinion,
+          thesisRationale: ranking.thesisRationale,
+          mainConcern: ranking.mainConcern,
+          whatToResearchNext: ranking.whatToResearchNext,
+          confidence: ranking.confidence,
+          citations: ranking.citations,
         }
       })
       modelStatus = 'generated'
-    } catch {
-      modelStatus = 'fallback'
+    } catch (error) {
+      modelStatus =
+        error instanceof IntelligenceApiError &&
+        error.code === 'INTELLIGENCE_LIMIT_REACHED'
+          ? 'rate_limited'
+          : 'fallback'
     }
   }
 
   return {
-    version: 1,
+    version: 2,
     universeVersion: discoverUniverseVersion,
     generatedAt: services.now().toISOString(),
     modelStatus,

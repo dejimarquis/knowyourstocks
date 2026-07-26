@@ -45,11 +45,19 @@ const snapshot = (
 const rankings = (candidates: Array<{ snapshot: SecuritySnapshot }>) =>
   candidates.map((candidate) => ({
     symbol: candidate.snapshot.symbol,
-    score: 80,
-    opinion: 'Compelling' as const,
+    opinion: 'Fits thesis' as const,
     confidence: 'high' as const,
-    rationale: `${candidate.snapshot.symbol} matches supplied evidence.`,
-    risk: `${candidate.snapshot.symbol} has supplied risk evidence.`,
+    thesisRationale: `${candidate.snapshot.symbol} matches supplied evidence.`,
+    mainConcern: `${candidate.snapshot.symbol} has supplied risk evidence.`,
+    whatToResearchNext: `Review ${candidate.snapshot.symbol} filings.`,
+    citationIds: [`${candidate.snapshot.symbol.toLowerCase()}-quality-0`],
+    citations: [
+      {
+        evidenceId: `${candidate.snapshot.symbol.toLowerCase()}-quality-0`,
+        symbol: candidate.snapshot.symbol,
+        text: 'Quality evidence is available.',
+      },
+    ],
   }))
 
 describe('discover recommendations', () => {
@@ -147,7 +155,12 @@ describe('discover recommendations', () => {
 
     expect(result.modelStatus).toBe('fallback')
     expect(result.recommendations).toHaveLength(5)
-    expect(result.recommendations.every((item) => item.aiScore == null)).toBe(true)
+    expect(result.recommendations.every((item) => item.opinion == null)).toBe(true)
+    expect(
+      result.recommendations.every(
+        (item) => item.whatToResearchNext.length > 0,
+      ),
+    ).toBe(true)
   })
 
   it('sends exactly five supplied candidates to the ranking endpoint', async () => {
@@ -179,11 +192,19 @@ describe('discover recommendations', () => {
         JSON.stringify({
           rankings: body.candidates.map((candidate) => ({
             symbol: candidate.symbol,
-            score: 80,
-            opinion: 'Compelling',
+            opinion: 'Fits thesis',
             confidence: 'high',
-            rationale: 'Supplied evidence supports the comparison.',
-            risk: 'Supplied evidence identifies uncertainty.',
+            thesisRationale: 'Supplied evidence supports the comparison.',
+            mainConcern: 'Supplied evidence identifies uncertainty.',
+            whatToResearchNext: 'Review the latest filing.',
+            citationIds: [`${candidate.symbol.toLowerCase()}-quality-0`],
+            citations: [
+              {
+                evidenceId: `${candidate.symbol.toLowerCase()}-quality-0`,
+                symbol: candidate.symbol,
+                text: 'Quality evidence is available.',
+              },
+            ],
           })),
         }),
         { status: 200 },
@@ -206,5 +227,51 @@ describe('discover recommendations', () => {
       candidates.map((candidate) => candidate.snapshot.symbol),
     )
     expect(body.thesis.note).toBe('Prefer durable AI infrastructure.')
+  })
+
+  it('requires the exact opinion contract and surfaces safe rate limits', async () => {
+    const candidates = ['MSFT', 'NVDA', 'GOOGL', 'META', 'AVGO'].map(
+      (symbol) => ({
+        snapshot: snapshot(symbol),
+        fit: {
+          total: 80,
+          label: 'Strong match' as const,
+          factors: [],
+          missing: [],
+        },
+      }),
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              error: 'Recommendation limit reached.',
+              code: 'INTELLIGENCE_LIMIT_REACHED',
+              retryable: true,
+            }),
+            { status: 429 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              rankings: rankings(candidates).map((ranking) => ({
+                ...ranking,
+                score: 80,
+              })),
+            }),
+          ),
+        ),
+    )
+
+    await expect(
+      requestRecommendationIntelligence(defaultThesis, candidates),
+    ).rejects.toMatchObject({ code: 'INTELLIGENCE_LIMIT_REACHED' })
+    await expect(
+      requestRecommendationIntelligence(defaultThesis, candidates),
+    ).rejects.toThrow()
   })
 })

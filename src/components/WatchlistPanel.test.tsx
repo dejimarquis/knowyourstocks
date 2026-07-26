@@ -53,37 +53,94 @@ const watchlist = (status: 'generated' | 'fallback'): Watchlist => ({
     stableSymbols: ['TEST'],
     errors: [],
     prioritizedSignalIds: [],
-    prioritizedEvidenceIds: [],
-    aiSummary:
+    prioritizedEvidenceIds:
+      status === 'generated' ? ['stock-evidence:test:growth-quality'] : [],
+    prioritizedEvidence:
       status === 'generated'
-        ? 'Current evidence remains consistent with the saved thesis.'
-        : null,
-    aiAssessments:
-      status === 'generated'
-        ? [
-            {
-              symbol: 'TEST',
-              score: 76,
-              opinion: 'Promising but mixed',
-              summary: 'Quality evidence is positive while valuation is mixed.',
-              strengths: [
-                {
-                  evidenceId: 'stock-evidence:test:growth-quality',
-                  text: 'Revenue growth is 15%.',
-                },
-              ],
-              risks: [
-                {
-                  evidenceId: 'stock-evidence:test:valuation-balance',
-                  text: 'P/E is 20.',
-                },
-              ],
-              confidence: 'medium',
-            },
-          ]
+        ? [{
+            evidenceId: 'stock-evidence:test:growth-quality',
+            symbol: 'TEST',
+            text: 'Revenue growth is 15%.',
+          }]
         : [],
-    crossStockPatterns: [],
-    aiUncertainties: [],
+    modelOverallOpinion: status === 'generated' ? 'Mixed' : null,
+    modelOverallSummary:
+      status === 'generated'
+        ? {
+            text: 'Current evidence remains consistent with the saved thesis.',
+            citationIds: ['stock-evidence:test:growth-quality'],
+            citations: [{
+              evidenceId: 'stock-evidence:test:growth-quality',
+              symbol: 'TEST',
+              text: 'Revenue growth is 15%.',
+            }],
+          }
+        : null,
+    stockOpinions:
+      status === 'generated'
+        ? [{
+            symbol: 'TEST',
+            opinion: 'Mixed',
+            whatChanged: {
+              text: 'No material change',
+              citationIds: ['stock-evidence:test:context'],
+              citations: [{
+                evidenceId: 'stock-evidence:test:context',
+                symbol: 'TEST',
+                text: 'No stock-specific deterministic change signal.',
+              }],
+            },
+            whyItFits: [{
+              text: 'Quality evidence supports the thesis.',
+              citationIds: ['stock-evidence:test:growth-quality'],
+              citations: [{
+                evidenceId: 'stock-evidence:test:growth-quality',
+                symbol: 'TEST',
+                text: 'Revenue growth is 15%.',
+              }],
+            }],
+            concerns: [{
+              text: 'Valuation remains mixed.',
+              citationIds: ['stock-evidence:test:valuation-balance'],
+              citations: [{
+                evidenceId: 'stock-evidence:test:valuation-balance',
+                symbol: 'TEST',
+                text: 'P/E is 20.',
+              }],
+            }],
+            whatToWatchNext: [{
+              text: 'Review the next filing.',
+              citationIds: ['stock-evidence:test:context'],
+              citations: [{
+                evidenceId: 'stock-evidence:test:context',
+                symbol: 'TEST',
+                text: 'Latest filing context.',
+              }],
+            }],
+            confidence: 'medium',
+          }]
+        : [],
+    crossStockPatterns:
+      status === 'generated'
+        ? [{
+            title: 'Shared margin sensitivity',
+            summary: 'Margins are the main shared evidence gap.',
+            citationIds: ['stock-evidence:test:growth-quality', 'other:margin'],
+            citations: [
+              {
+                evidenceId: 'stock-evidence:test:growth-quality',
+                symbol: 'TEST',
+                text: 'Revenue growth is 15%.',
+              },
+              {
+                evidenceId: 'other:margin',
+                symbol: 'OTHER',
+                text: 'Operating margin evidence is incomplete.',
+              },
+            ],
+            confidence: 'low',
+          }]
+        : [],
     modelStatus: status,
   },
 })
@@ -105,25 +162,41 @@ const renderPanel = (value: Watchlist) =>
 afterEach(cleanup)
 
 describe('WatchlistPanel', () => {
-  it('renders the per-stock evidence assessment after a generated review', () => {
+  it('renders overall and per-stock opinions with exact stable copy and citations', () => {
     renderPanel(watchlist('generated'))
 
-    expect(screen.getByText('76/100 · Promising but mixed')).toBeInTheDocument()
+    expect(screen.getAllByText('Mixed')).toHaveLength(2)
     expect(
-      screen.getByText('Quality evidence is positive while valuation is mixed.'),
+      screen.getByText('Current evidence remains consistent with the saved thesis.'),
     ).toBeInTheDocument()
-    expect(screen.getByText('Revenue growth is 15%.')).toBeInTheDocument()
-    expect(screen.getByText('P/E is 20.')).toBeInTheDocument()
+    expect(screen.getByText('No material change')).toBeInTheDocument()
+    expect(screen.getByText('Quality evidence supports the thesis.')).toBeInTheDocument()
+    expect(screen.getByText('Valuation remains mixed.')).toBeInTheDocument()
+    expect(screen.getByText('Review the next filing.')).toBeInTheDocument()
     expect(
-      screen.getByText(/Evidence assessment only\. This is not a trade recommendation/),
+      screen
+        .getAllByText(/Confidence:/)
+        .find((element) => element.textContent?.includes('medium')),
+    ).toHaveTextContent(
+      'Confidence: medium. Research context only.',
+    )
+    expect(
+      screen.getByText(/Research context only\. This is not a trade recommendation/),
     ).toBeInTheDocument()
+    expect(screen.queryByText(/\/100/)).not.toBeInTheDocument()
+    expect(screen.getByText('Priority sources (1)')).toBeInTheDocument()
+    expect(screen.getByText('Shared margin sensitivity')).toBeInTheDocument()
+    expect(screen.getByText('Margins are the main shared evidence gap.')).toBeInTheDocument()
   })
 
-  it('does not imply an AI assessment exists after fallback', () => {
+  it('does not imply a model opinion exists after fallback', () => {
     renderPanel(watchlist('fallback'))
 
     expect(
-      screen.getByText(/no AI assessment was generated/i),
+      screen.queryByText(/no AI assessment was generated/i),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/no opinion was added/i),
     ).toBeInTheDocument()
     expect(screen.queryByText(/\/100/)).not.toBeInTheDocument()
   })

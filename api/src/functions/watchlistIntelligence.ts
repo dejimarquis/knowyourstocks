@@ -8,7 +8,7 @@ import {
   generateWatchlistIntelligence,
   parseIntelligenceRequest,
 } from '../lib/watchlistIntelligence'
-import { intelligenceErrorStatus } from '../lib/groundedIntelligence'
+import { intelligenceErrorResponse } from '../lib/groundedIntelligence'
 
 const handler = async (
   request: HttpRequest,
@@ -33,12 +33,8 @@ const handler = async (
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Watchlist intelligence failed.'
-    const status = intelligenceErrorStatus(error)
     context.error(`Watchlist intelligence failed: ${message}`)
-    return {
-      status,
-      jsonBody: { error: message },
-    }
+    return intelligenceErrorResponse(error)
   }
 }
 

@@ -458,6 +458,7 @@ function App() {
             }}
             recentSymbols={recentResearchSymbols}
             thesis={thesis}
+            watchlistLocked={reviewStatus === 'reviewing'}
             watchedSymbols={watchedSymbols}
           />
         ) : (

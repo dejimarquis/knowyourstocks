@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SecuritySnapshot } from '../data/alphaVantage'
 import {
   discoverRecommendations,
@@ -13,6 +13,7 @@ import {
   saveDiscoverResult,
   startDiscoverCooldown,
 } from '../storage/discoverStorage'
+import { IntelligenceCitations } from './IntelligenceCitations'
 
 export type DiscoverPanelProps = {
   thesis: InvestmentThesis
@@ -21,6 +22,7 @@ export type DiscoverPanelProps = {
   loadFinnhubKey?: () => string
   recentSymbols?: string[]
   currentSymbol?: string | null
+  watchlistLocked?: boolean
   onResearch: (symbol: string) => void
   onAddToWatchlist: (snapshot: SecuritySnapshot, fit: FitScore) => void
 }
@@ -43,6 +45,7 @@ export function DiscoverPanel({
   loadFinnhubKey,
   recentSymbols = [],
   currentSymbol = null,
+  watchlistLocked = false,
   onResearch,
   onAddToWatchlist,
 }: DiscoverPanelProps) {
@@ -58,9 +61,11 @@ export function DiscoverPanel({
   )
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
   const [message, setMessage] = useState<string | null>(null)
+  const requestGeneration = useRef(0)
   const locked = !resolveKey(finnhubKey, loadFinnhubKey)
 
   useEffect(() => {
+    requestGeneration.current += 1
     setResult(loadDiscoverResult(fingerprint))
     setMessage(null)
     setStatus('idle')
@@ -85,6 +90,8 @@ export function DiscoverPanel({
     setStatus('loading')
     setMessage(null)
     startDiscoverCooldown()
+    const generation = ++requestGeneration.current
+    const requestFingerprint = fingerprint
     try {
       const nextResult = await discoverRecommendations({
         thesis,
@@ -93,7 +100,10 @@ export function DiscoverPanel({
         recentSymbols,
         currentSymbol,
       })
-      saveDiscoverResult(fingerprint, nextResult)
+      saveDiscoverResult(requestFingerprint, nextResult)
+      if (requestGeneration.current !== generation) {
+        return
+      }
       setResult(nextResult)
       setMessage(
         nextResult.providerErrors > 0
@@ -102,6 +112,9 @@ export function DiscoverPanel({
       )
       setStatus('idle')
     } catch (error) {
+      if (requestGeneration.current !== generation) {
+        return
+      }
       setStatus('error')
       setMessage(
         error instanceof Error
@@ -131,7 +144,7 @@ export function DiscoverPanel({
       <p className="discover-intro">
         A bounded universe of liquid US common stocks is filtered through your
         thesis, nearby companies, and current fundamentals. Refreshing may use
-        Finnhub, SEC, and Azure Phi quota.
+        Finnhub, SEC, and Azure AI model usage.
       </p>
 
       {locked ? (
@@ -172,9 +185,11 @@ export function DiscoverPanel({
             </span>
             <span>
               {result.modelStatus === 'generated'
-                ? 'Phi-ranked'
+                ? 'Model opinions available'
+                : result.modelStatus === 'rate_limited'
+                  ? 'Model limit reached · deterministic fallback'
                 : result.modelStatus === 'fallback'
-                  ? 'Deterministic fallback'
+                  ? 'Model unavailable · deterministic fallback'
                   : 'Deterministic partial result'}
             </span>
           </div>
@@ -189,36 +204,40 @@ export function DiscoverPanel({
                     <span>{recommendation.snapshot.symbol}</span>
                     <h2>{recommendation.snapshot.name}</h2>
                   </div>
-                  <div className="discover-scores">
+                  <div className="discover-fit">
                     <span>Fit</span>
                     <strong>
                       {recommendation.fit.total == null
                         ? '—'
                         : recommendation.fit.total}
                     </strong>
-                    {recommendation.aiScore != null ? (
-                      <small>
-                        AI evidence {recommendation.aiScore}
-                        {recommendation.aiOpinion
-                          ? ` · ${recommendation.aiOpinion}`
-                          : ''}
-                        {recommendation.aiConfidence
-                          ? ` · ${recommendation.aiConfidence} confidence`
-                          : ''}
-                      </small>
-                    ) : null}
                   </div>
+                </div>
+                <div className="discover-opinion">
+                  <strong>
+                    {recommendation.opinion ?? 'Deterministic comparison'}
+                  </strong>
+                  <span>
+                    {recommendation.confidence
+                      ? `${recommendation.confidence} confidence`
+                      : 'Model opinion unavailable'}
+                  </span>
                 </div>
                 <dl className="discover-rationale">
                   <div>
-                    <dt>Why it fits</dt>
-                    <dd>{recommendation.reason}</dd>
+                    <dt>Thesis rationale</dt>
+                    <dd>{recommendation.thesisRationale}</dd>
                   </div>
                   <div>
-                    <dt>Main risk or gap</dt>
-                    <dd>{recommendation.risk}</dd>
+                    <dt>Main concern</dt>
+                    <dd>{recommendation.mainConcern}</dd>
+                  </div>
+                  <div>
+                    <dt>What to research next</dt>
+                    <dd>{recommendation.whatToResearchNext}</dd>
                   </div>
                 </dl>
+                <IntelligenceCitations citations={recommendation.citations} />
                 <p className="discover-source">
                   {recommendation.snapshot.source} · market data as of{' '}
                   {recommendation.snapshot.latestTradingDay}
@@ -233,6 +252,7 @@ export function DiscoverPanel({
                   </button>
                   <button
                     className="watch-action"
+                    disabled={watchlistLocked}
                     onClick={() =>
                       onAddToWatchlist(
                         recommendation.snapshot,
@@ -241,7 +261,9 @@ export function DiscoverPanel({
                     }
                     type="button"
                   >
-                    Add to watchlist
+                    {watchlistLocked
+                      ? 'Review in progress'
+                      : 'Add to watchlist'}
                   </button>
                 </div>
               </li>

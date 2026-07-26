@@ -6,6 +6,10 @@ import {
 import { fetchFinnhubSecurity } from '../data/finnhub'
 import { enrichWithSecFallback } from '../data/sec'
 import type { InvestmentThesis } from '../domain/thesis'
+import {
+  IntelligenceApiError,
+  type CitedClaim,
+} from '../intelligence/contracts'
 import { scoreSecurity, type FitScore } from '../scoring/scoreSecurity'
 import {
   createResearchIntelligenceRequest,
@@ -17,6 +21,7 @@ import {
   loadFinnhubKey,
   saveFinnhubKey,
 } from '../storage/providerKeyStorage'
+import { IntelligenceCitations } from './IntelligenceCitations'
 
 const securityCacheKey = 'knowyourstocks.lastSecurity.v2'
 const demoKey = 'demo'
@@ -40,6 +45,7 @@ type IntelligenceState = {
   key: string
   status: 'loading' | 'success' | 'unavailable'
   result?: ResearchIntelligenceResult
+  error?: IntelligenceApiError
 }
 
 const loadCachedSecurity = (): SecuritySnapshot | null => {
@@ -177,7 +183,7 @@ const explainFit = (fit: FitScore) => {
   const conflict = joinPhrases(conflicting)
   return `${supporting.length > 0 ? `The clearest match is ${joinPhrases(supporting)}.` : 'There is no clear match in the available evidence.'} ${
     conflicting.length > 0
-      ? `${capitalize(conflict)} ${conflicting.length === 1 ? 'weakens' : 'weaken'} the score.`
+      ? `${capitalize(conflict)} ${conflicting.length === 1 ? 'weakens' : 'weaken'} the Fit.`
       : 'Several factors only partially match your preferences.'
   }`
 }
@@ -235,6 +241,26 @@ const formatTimestamp = (value: number) =>
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(new Date(value))
+
+const ClaimList = ({
+  claims,
+  emptyMessage,
+}: {
+  claims: CitedClaim[]
+  emptyMessage: string
+}) =>
+  claims.length > 0 ? (
+    <ul>
+      {claims.map((claim) => (
+        <li key={`${claim.text}:${claim.citationIds.join(':')}`}>
+          <p>{claim.text}</p>
+          <IntelligenceCitations citations={claim.citations} />
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <p>{emptyMessage}</p>
+  )
 
 export function SecurityLookup({
   thesis,
@@ -319,12 +345,24 @@ export function SecurityLookup({
           setIntelligence({ key: intelligenceKey, status: 'success', result })
         }
       })
-      .catch(() => {
+      .catch((caughtError) => {
         if (
           !controller.signal.aborted &&
           intelligenceGeneration.current === generation
         ) {
-          setIntelligence({ key: intelligenceKey, status: 'unavailable' })
+          setIntelligence({
+            key: intelligenceKey,
+            status: 'unavailable',
+            error:
+              caughtError instanceof IntelligenceApiError
+                ? caughtError
+                : new IntelligenceApiError(
+                    'Intelligence is temporarily unavailable.',
+                    503,
+                    'INVALID_ERROR_RESPONSE',
+                    true,
+                  ),
+          })
         }
       })
 
@@ -527,8 +565,8 @@ export function SecurityLookup({
                 <h4 id="fit-title">{fit.label}</h4>
                 <p>{fitExplanation}</p>
                 <small>
-                  This score measures fit with your preferences. It does not
-                  forecast returns.
+                  This deterministic Fit compares the available data with your
+                  preferences. It does not forecast returns.
                 </small>
               </div>
             </div>
@@ -576,7 +614,7 @@ export function SecurityLookup({
             </p>
 
             <details className="factor-details">
-              <summary>Why this score</summary>
+              <summary>How this Fit was calculated</summary>
               <ol className="factor-list">
                 {fit.factors.map((factor) => (
                   <li key={factor.key}>
@@ -603,13 +641,13 @@ export function SecurityLookup({
             >
               <div className="research-intelligence-heading">
                 <div>
-                  <span>AI take</span>
+                  <span>Model opinion</span>
                   <h4 id="research-intelligence-title">
                     What the evidence suggests
                   </h4>
                 </div>
                 <p>
-                  A second opinion based on the same company facts and your
+                  A concise opinion based on the same company facts and your
                   thesis. It does not predict returns.
                 </p>
               </div>
@@ -617,75 +655,87 @@ export function SecurityLookup({
               {!currentIntelligence ||
                 currentIntelligence.status === 'loading' ? (
                 <div className="research-intelligence-status" role="status">
-                  <strong>Analyzing this stock…</strong>
+                  <strong>Reviewing the supplied evidence…</strong>
                   <span>
-                    Your company data and Fit score are ready while the AI take
-                    loads.
+                    Your company data and deterministic Fit are ready while the
+                    model opinion loads.
                   </span>
                 </div>
               ) : currentIntelligence.status === 'unavailable' ? (
                 <div className="research-intelligence-status" role="status">
-                  <strong>AI take could not load</strong>
+                  <strong>
+                    {currentIntelligence.error?.code ===
+                    'INTELLIGENCE_LIMIT_REACHED'
+                      ? 'Model opinion limit reached'
+                      : 'Model opinion could not load'}
+                  </strong>
                   <span>
-                    The company data and Fit score above are still available.
+                    {currentIntelligence.error?.code === 'INVALID_REQUEST'
+                      ? 'The request was not accepted. The company data and deterministic Fit above remain available.'
+                      : 'The company data and deterministic Fit above remain available. No model opinion is shown.'}
                   </span>
-                  <button
-                    className="text-action"
-                    onClick={retryIntelligence}
-                    type="button"
-                  >
-                    Try AI again
-                  </button>
+                  {currentIntelligence.error?.retryable ? (
+                    <button
+                      className="text-action"
+                      onClick={retryIntelligence}
+                      type="button"
+                    >
+                      Try model opinion again
+                    </button>
+                  ) : null}
                 </div>
               ) : currentIntelligence.result ? (
                 <>
                   <div className="research-intelligence-summary">
-                    <div className="ai-score">
-                      <span>AI evidence score</span>
-                      <strong
-                        aria-label={`${currentIntelligence.result.score} out of 100`}
-                      >
-                        {currentIntelligence.result.score}
-                      </strong>
-                    </div>
                     <div>
-                      <div className="ai-opinion-line">
+                      <div className="opinion-heading">
+                        <span>Opinion</span>
                         <strong>{currentIntelligence.result.opinion}</strong>
                         <span>
                           {currentIntelligence.result.confidence} confidence
                         </span>
                       </div>
-                      <p>{currentIntelligence.result.summary}</p>
+                      <h5>{currentIntelligence.result.headline}</h5>
+                      <p>{currentIntelligence.result.reasoningSummary.text}</p>
+                      <IntelligenceCitations
+                        citations={
+                          currentIntelligence.result.reasoningSummary.citations
+                        }
+                      />
                     </div>
                   </div>
-                  <div className="research-evidence-columns">
+                  <div className="research-opinion-grid">
                     <div>
-                      <h5>What supports it</h5>
-                      {currentIntelligence.result.strengths.length > 0 ? (
-                        <ul>
-                          {currentIntelligence.result.strengths.map((strength) => (
-                            <li key={strength.evidenceId}>{strength.text}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p>No clear supporting evidence was identified.</p>
-                      )}
+                      <h5>Why it fits</h5>
+                      <ClaimList
+                        claims={currentIntelligence.result.whyItFits}
+                        emptyMessage="No verified supporting point was identified."
+                      />
                     </div>
                     <div>
-                      <h5>What to watch</h5>
-                      {currentIntelligence.result.risks.length > 0 ? (
-                        <ul>
-                          {currentIntelligence.result.risks.map((risk) => (
-                            <li key={risk.evidenceId}>{risk.text}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p>No clear risk was identified in the supplied evidence.</p>
-                      )}
+                      <h5>Concerns</h5>
+                      <ClaimList
+                        claims={currentIntelligence.result.concerns}
+                        emptyMessage="No verified concern was identified."
+                      />
                     </div>
+                    <div>
+                      <h5>What to watch next</h5>
+                      <ClaimList
+                        claims={currentIntelligence.result.whatToWatchNext}
+                        emptyMessage="No next research item was identified."
+                      />
+                    </div>
+                  </div>
+                  <div className="research-uncertainty">
+                    <h5>Uncertainty</h5>
+                    <p>{currentIntelligence.result.uncertainty.text}</p>
+                    <IntelligenceCitations
+                      citations={currentIntelligence.result.uncertainty.citations}
+                    />
                   </div>
                   <p className="research-intelligence-disclosure">
-                    Model: Azure AI Foundry grounded assessment · Freshness:{' '}
+                    Model: Azure AI Foundry grounded opinion · Freshness:{' '}
                     <time
                       dateTime={new Date(
                         currentIntelligence.result.fetchedAt,

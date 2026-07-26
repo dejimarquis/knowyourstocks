@@ -1,29 +1,31 @@
 import { z } from 'zod'
 import {
-  asRecord,
   assertNoInventedNumericClaims,
+  assertNoNumericNarrative,
   assertNoProhibitedAdvice,
   callGroundedModel,
   compactSnapshotSchema,
   confidenceSchema,
   createEvidenceCatalog,
   groundedEvidenceSchema,
-  normalizeConfidence,
-  normalizeOpinion,
-  normalizeScore,
+  mapCitations,
+  mappedCitationSchema,
   opinionSchema,
-  pick,
+  parseIntelligenceRequestBody,
   thesisSchema,
   type GroundedEvidence,
+  type JsonSchema,
 } from './groundedIntelligence'
 
-const candidateSchema = z.object({
-  symbol: z.string().min(1).max(16),
-  name: z.string().min(1).max(160),
-  deterministicFit: z.number().min(0).max(100).nullable().optional(),
-  snapshot: compactSnapshotSchema.optional(),
-  evidence: z.array(groundedEvidenceSchema).min(1).max(12),
-})
+const candidateSchema = z
+  .object({
+    symbol: z.string().min(1).max(16),
+    name: z.string().min(1).max(160),
+    deterministicFit: z.number().min(0).max(100).nullable().optional(),
+    snapshot: compactSnapshotSchema.optional(),
+    evidence: z.array(groundedEvidenceSchema).min(1).max(12),
+  })
+  .strict()
 
 export const recommendationIntelligenceRequestSchema = z
   .object({
@@ -31,6 +33,7 @@ export const recommendationIntelligenceRequestSchema = z
     thesis: thesisSchema,
     candidates: z.array(candidateSchema).min(1).max(8),
   })
+  .strict()
   .superRefine((request, context) => {
     const symbols = request.candidates.map((item) => item.symbol.toUpperCase())
     if (new Set(symbols).size !== symbols.length) {
@@ -50,25 +53,42 @@ export const recommendationIntelligenceRequestSchema = z
     }
   })
 
-const mappedEvidenceSchema = z.object({
-  evidenceId: z.string(),
-  text: z.string(),
-})
+const modelRankingSchema = z
+  .object({
+    symbol: z.string(),
+    opinion: opinionSchema,
+    thesisRationale: z.string().min(1).max(300).regex(/^[^0-9]*$/),
+    mainConcern: z.string().min(1).max(240).regex(/^[^0-9]*$/),
+    whatToResearchNext: z.string().min(1).max(240).regex(/^[^0-9]*$/),
+    confidence: confidenceSchema,
+    citationIds: z.array(z.string()).min(1).max(5),
+  })
+  .strict()
 
-const rankedRecommendationSchema = z.object({
-  symbol: z.string(),
-  score: z.number().int().min(0).max(100),
-  opinion: opinionSchema,
-  confidence: confidenceSchema,
-  rationale: z.string().min(1).max(240),
-  risk: z.string().min(1).max(240),
-  rationaleEvidence: z.array(mappedEvidenceSchema).min(1).max(3),
-  riskEvidence: z.array(mappedEvidenceSchema).min(1).max(3),
-})
+const recommendationModelSchema = z
+  .object({
+    rankings: z.array(modelRankingSchema).min(1).max(8),
+  })
+  .strict()
 
-export const recommendationIntelligenceResponseSchema = z.object({
-  rankings: z.array(rankedRecommendationSchema).min(1).max(5),
-})
+const rankedRecommendationSchema = z
+  .object({
+    symbol: z.string(),
+    opinion: opinionSchema,
+    thesisRationale: z.string().min(1).max(300),
+    mainConcern: z.string().min(1).max(240),
+    whatToResearchNext: z.string().min(1).max(240),
+    confidence: confidenceSchema,
+    citationIds: z.array(z.string()).min(1).max(5),
+    citations: z.array(mappedCitationSchema).min(1).max(5),
+  })
+  .strict()
+
+export const recommendationIntelligenceResponseSchema = z
+  .object({
+    rankings: z.array(rankedRecommendationSchema).min(1).max(8),
+  })
+  .strict()
 
 export type RecommendationIntelligenceRequest = z.infer<
   typeof recommendationIntelligenceRequestSchema
@@ -80,19 +100,57 @@ export type RecommendationIntelligenceResponse = z.infer<
 export const parseRecommendationIntelligenceRequest = (
   value: unknown,
 ): RecommendationIntelligenceRequest =>
-  recommendationIntelligenceRequestSchema.parse(value)
+  parseIntelligenceRequestBody(recommendationIntelligenceRequestSchema, value)
+
+const recommendationResponseJsonSchema = (
+  evidenceIds: string[],
+  symbols: string[],
+): JsonSchema => ({
+  type: 'object',
+  additionalProperties: false,
+  required: ['rankings'],
+  properties: {
+    rankings: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 8,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'symbol',
+          'opinion',
+          'thesisRationale',
+          'mainConcern',
+          'whatToResearchNext',
+          'confidence',
+          'citationIds',
+        ],
+        properties: {
+          symbol: { type: 'string', enum: symbols },
+          opinion: { type: 'string', enum: opinionSchema.options },
+          thesisRationale: { type: 'string' },
+          mainConcern: { type: 'string' },
+          whatToResearchNext: { type: 'string' },
+          confidence: { type: 'string', enum: confidenceSchema.options },
+          citationIds: {
+            type: 'array',
+            minItems: 1,
+            maxItems: 5,
+            items: { type: 'string', enum: evidenceIds },
+          },
+        },
+      },
+    },
+  },
+})
 
 const canonicalSymbol = (
-  value: unknown,
+  value: string,
   candidates: Map<string, string>,
 ) => {
-  if (typeof value !== 'string') {
-    throw new Error('Model returned an out-of-set symbol.')
-  }
   const symbol = candidates.get(value.trim().toUpperCase())
-  if (!symbol) {
-    throw new Error('Model returned an out-of-set symbol.')
-  }
+  if (!symbol) throw new Error('Model returned an out-of-set symbol.')
   return symbol
 }
 
@@ -110,7 +168,7 @@ const normalizeRecommendationOutput = (
   value: unknown,
   request: RecommendationIntelligenceRequest,
 ): RecommendationIntelligenceResponse => {
-  const record = asRecord(value)
+  const model = recommendationModelSchema.parse(value)
   const allEvidence = request.candidates.flatMap((candidate) => candidate.evidence)
   const catalog = createEvidenceCatalog(allEvidence)
   const candidates = new Map(
@@ -119,176 +177,53 @@ const normalizeRecommendationOutput = (
       candidate.symbol,
     ]),
   )
-  const candidateBySymbol = new Map(
-    request.candidates.map((candidate) => [
-      candidate.symbol.toUpperCase(),
-      candidate,
-    ]),
-  )
-  const expectedCount = Math.min(5, request.candidates.length)
-  const rawRankings = pick(record, ['rankings', 'Rankings'])
-  let rankings: Array<Record<string, unknown>>
-  const symbolMapRankings = Object.entries(record)
-    .filter(([symbol, value]) => {
-      const canonical = candidates.has(symbol.toUpperCase())
-      return canonical && typeof value === 'object' && value !== null
-    })
-    .map(([symbol, value]) => ({
-      symbol,
-      ...asRecord(value),
-    }))
 
-  if (symbolMapRankings.length === expectedCount) {
-    rankings = symbolMapRankings
-  } else if (
-    Array.isArray(rawRankings) &&
-    rawRankings.every(
-      (item) => typeof item === 'object' && item !== null,
-    )
-  ) {
-    rankings = rawRankings.map(asRecord)
-  } else {
-    const ordered = Array.isArray(rawRankings)
-      ? rawRankings
-      : pick(record, [
-          'rankedSymbols',
-          'RankedSymbols',
-          'ranked_symbols',
-          'orderedSymbols',
-          'ordered_symbols',
-          'priority_order',
-          'order',
-        ])
-    const rationales = pick(record, ['rationales', 'Rationales'])
-    if (!Array.isArray(ordered)) {
-      throw new Error('Model returned an invalid recommendation ranking.')
-    }
-    const rationaleRecords = Array.isArray(rationales)
-      ? rationales.map(asRecord)
-      : []
-    rankings = ordered.map((symbol) => {
-      const canonical = canonicalSymbol(symbol, candidates)
-      const rationale =
-        rationaleRecords.find((item) => {
-          try {
-            return canonicalSymbol(item.symbol, candidates) === canonical
-          } catch {
-            return false
-          }
-        }) ?? {}
-      return {
-        symbol: canonical,
-        score: pick(rationale, ['score', 'Score', 'thesisEvidenceScore']),
-        opinion: pick(rationale, ['opinion', 'Opinion']),
-        confidence: pick(rationale, ['confidence', 'Confidence']),
-        rationaleEvidenceIds: pick(rationale, [
-          'rationaleEvidenceIds',
-          'evidenceIds',
-        ]),
-        riskEvidenceIds: pick(rationale, [
-          'riskEvidenceIds',
-          'evidenceIds',
-        ]),
-      }
-    })
-  }
-
-  if (rankings.length !== expectedCount) {
+  if (model.rankings.length !== request.candidates.length) {
     throw new Error(
-      `Model must rank exactly ${expectedCount} supplied candidates.`,
+      `Model must rank exactly ${request.candidates.length} supplied candidates.`,
     )
   }
 
-  const normalized = rankings.map((ranking) => {
-    const symbol = canonicalSymbol(
-      pick(ranking, ['symbol', 'Symbol', 'ticker']),
-      candidates,
-    )
-    const candidate = candidateBySymbol.get(symbol.toUpperCase())
-    if (!candidate) {
-      throw new Error('Model returned an out-of-set symbol.')
-    }
-    const fallbackRationale = candidate.evidence[0]
-    const fallbackRisk = candidate.evidence.at(-1) ?? fallbackRationale
-    const rationaleIds = pick(ranking, [
-      'rationaleEvidenceIds',
-      'RationaleEvidenceIds',
-      'rationale_evidence_ids',
-      'evidenceIds',
-      'EvidenceIds',
-    ])
-    const riskIds = pick(ranking, [
-      'riskEvidenceIds',
-      'RiskEvidenceIds',
-      'risk_evidence_ids',
-      'evidenceIds',
-    ])
-    const score = normalizeScore(
-      pick(ranking, ['score', 'Score', 'thesisEvidenceScore']),
-    )
-    const rationaleEvidence = evidenceForSymbol(
-      catalog.resolveIds(
-        Array.isArray(rationaleIds) && rationaleIds.length === 0
-          ? [fallbackRationale.id]
-          : rationaleIds ?? [fallbackRationale.id],
-        { min: 1, max: 12 },
-      ).slice(0, 3),
+  const rankings = model.rankings.map((ranking) => {
+    const symbol = canonicalSymbol(ranking.symbol, candidates)
+    const evidence = evidenceForSymbol(
+      catalog.resolveIds(ranking.citationIds, { min: 1, max: 5 }),
       symbol,
     )
-    const riskEvidence = evidenceForSymbol(
-      catalog.resolveIds(
-        Array.isArray(riskIds) && riskIds.length === 0
-          ? [fallbackRisk.id]
-          : riskIds ?? [fallbackRisk.id],
-        { min: 1, max: 12 },
-      ).slice(0, 3),
-      symbol,
+    const narratives = [
+      ranking.thesisRationale,
+      ranking.mainConcern,
+      ranking.whatToResearchNext,
+    ]
+    assertNoProhibitedAdvice(narratives)
+    assertNoNumericNarrative(narratives)
+    narratives.forEach((narrative) =>
+      assertNoInventedNumericClaims(narrative, evidence),
     )
-    const rawRationale = pick(ranking, ['rationale', 'Rationale', 'reason'])
-    const rawRisk = pick(ranking, ['risk', 'Risk', 'mainRisk'])
-    const rationale =
-      typeof rawRationale === 'string' && rawRationale.trim()
-        ? rawRationale.trim()
-        : rationaleEvidence[0].text
-    const risk =
-      typeof rawRisk === 'string' && rawRisk.trim()
-        ? rawRisk.trim()
-        : riskEvidence[0].text
-
-    assertNoProhibitedAdvice([rationale, risk])
-    assertNoInventedNumericClaims(rationale, rationaleEvidence)
-    assertNoInventedNumericClaims(risk, riskEvidence)
-
     return {
+      ...ranking,
       symbol,
-      score,
-      opinion: normalizeOpinion(
-        pick(ranking, ['opinion', 'Opinion']),
-        score,
-      ),
-      confidence: normalizeConfidence(
-        pick(ranking, ['confidence', 'Confidence']) ?? 'medium',
-      ),
-      rationale,
-      risk,
-      rationaleEvidence: rationaleEvidence.map((item) => ({
-        evidenceId: item.id,
-        text: item.text,
-      })),
-      riskEvidence: riskEvidence.map((item) => ({
-        evidenceId: item.id,
-        text: item.text,
-      })),
+      citationIds: evidence.map((item) => item.id),
+      citations: mapCitations(evidence),
     }
   })
 
-  if (new Set(normalized.map((item) => item.symbol)).size !== normalized.length) {
+  if (new Set(rankings.map((item) => item.symbol.toUpperCase())).size !== rankings.length) {
     throw new Error('Model returned duplicate recommendation symbols.')
   }
+  if (
+    request.candidates.some(
+      (candidate) =>
+        !rankings.some(
+          (ranking) =>
+            ranking.symbol.toUpperCase() === candidate.symbol.toUpperCase(),
+        ),
+    )
+  ) {
+    throw new Error('Model omitted a supplied recommendation candidate.')
+  }
 
-  return recommendationIntelligenceResponseSchema.parse({
-    rankings: normalized,
-  })
+  return recommendationIntelligenceResponseSchema.parse({ rankings })
 }
 
 export const generateRecommendationIntelligence = async (
@@ -297,22 +232,28 @@ export const generateRecommendationIntelligence = async (
 ) => {
   const evidence = request.candidates.flatMap((candidate) => candidate.evidence)
   const catalog = createEvidenceCatalog(evidence)
-  const count = Math.min(5, request.candidates.length)
 
   return callGroundedModel({
     operation: 'recommendations',
     request,
     clientId,
-    maxTokens: 450,
-    attemptTimeoutMs: 18_000,
-    regenerateInvalidOutput: false,
+    maxTokens: 2_200,
+    attemptTimeoutMs: 20_000,
+    reasoningEffort: 'low',
+    responseSchema: {
+      name: 'recommendation_opinions',
+      schema: recommendationResponseJsonSchema(
+        evidence.map((item) => item.id),
+        request.candidates.map((candidate) => candidate.symbol),
+      ),
+    },
     systemPrompt:
-      'Rank only supplied candidates for thesis-evidence fit. Use only supplied evidence aliases. Do not give trade instructions, predict returns, or add numeric claims to narratives.',
+      'Order every supplied candidate by fit with the supplied thesis. Never add or omit candidates. Opinions are research labels, not trade instructions. Use only evidence belonging to that candidate. Generated narrative text must contain no digits or numeric values. Do not return scores, prices, targets, guarantees, predictions, or invented facts.',
     userPrompt: `Thesis: ${request.thesis.style}; ${request.thesis.horizon}; ${request.thesis.risk}; sectors ${request.thesis.sectors.join(', ')}
 ${request.thesis.note ? `Optional thesis note: ${request.thesis.note}\n` : ''}Candidates: ${request.candidates.map((candidate) => candidate.symbol).join(', ')}
 Evidence:
 ${catalog.lines.join('\n')}
-Return rankings with exactly ${count} unique supplied symbols in order. Each item has symbol, score, opinion, confidence, rationaleEvidenceIds, and riskEvidenceIds. Score is 0-100 thesis-evidence strength, not a return forecast. Opinion must be Compelling, Promising but mixed, Watch closely, or Reconsider. Confidence must be low, medium, or high. Attach evidence only to its matching symbol. The server will map the selected evidence into user-facing prose.`,
+Return rankings containing every supplied candidate exactly once, ordered from strongest to weakest thesis fit. Each item requires symbol, opinion (Fits thesis, Mixed, Weak fit, or Insufficient evidence), concise thesisRationale, mainConcern, whatToResearchNext, confidence, and one or more exact supplied evidence IDs shown in parentheses and belonging to that symbol. Do not return evidence aliases or any score.`,
     normalize: (value) => normalizeRecommendationOutput(value, request),
   })
 }

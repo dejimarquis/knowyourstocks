@@ -22,7 +22,7 @@ const request = parseRecommendationIntelligenceRequest({
       {
         id: `${symbol}-evidence`,
         symbol,
-        text: `${symbol} has supplied quality and risk evidence.`,
+        text: `${symbol} has supplied quality and uncertainty evidence.`,
       },
     ],
   })),
@@ -37,15 +37,14 @@ const response = (content: unknown) =>
   )
 
 const validOutput = {
-  Rankings: symbols.slice(0, 5).map((symbol, index) => ({
-    Symbol: symbol.toLowerCase(),
-    Score: 8 - index * 0.5,
-    Opinion: index < 2 ? 'Compelling' : 'Promising but mixed',
-    Confidence: index < 2 ? 0.9 : 0.7,
-    Rationale: 'The supplied evidence supports thesis fit.',
-    Risk: 'The supplied evidence also identifies uncertainty.',
-    RationaleEvidenceIds: [index + 1],
-    RiskEvidenceIds: [`e${index + 1}`],
+  rankings: symbols.map((symbol) => ({
+    symbol,
+    opinion: symbol === 'XOM' ? 'Weak fit' : 'Mixed',
+    thesisRationale: 'The supplied evidence describes the thesis fit.',
+    mainConcern: 'The supplied evidence also identifies uncertainty.',
+    whatToResearchNext: 'Research the identified uncertainty further.',
+    confidence: 'medium',
+    citationIds: [`${symbol}-evidence`],
   })),
 }
 
@@ -54,63 +53,59 @@ describe('generateRecommendationIntelligence', () => {
     resetGroundedIntelligenceStateForTests()
     process.env.FOUNDRY_OPENAI_ENDPOINT = 'https://example.openai.azure.com'
     process.env.FOUNDRY_API_KEY = 'test-key'
-    process.env.FOUNDRY_DEPLOYMENT = 'phi-test'
+    process.env.FOUNDRY_DEPLOYMENT = 'gpt-5-mini-intelligence'
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(validOutput)))
   })
 
   afterEach(() => vi.unstubAllGlobals())
 
-  it('returns exactly five normalized supplied candidates', async () => {
+  it('returns every supplied candidate once, in model order, without scores', async () => {
     const output = await generateRecommendationIntelligence(
       request,
       'recommendation-client',
     )
 
-    expect(output.rankings).toHaveLength(5)
-    expect(output.rankings.map((item) => item.symbol)).toEqual(
-      symbols.slice(0, 5),
-    )
-    expect(output.rankings[0].rationaleEvidence[0].evidenceId).toBe(
-      'MSFT-evidence',
-    )
-    expect(output.rankings[0].score).toBe(80)
-    expect(output.rankings[0].confidence).toBe('high')
+    expect(output.rankings.map((item) => item.symbol)).toEqual(symbols)
+    expect(output.rankings.every((item) => !('score' in item))).toBe(true)
+    expect(output.rankings[0].citationIds).toEqual(['MSFT-evidence'])
+    expect(output.rankings[0].citations[0]).toMatchObject({
+      evidenceId: 'MSFT-evidence',
+      symbol: 'MSFT',
+    })
   })
 
-  it('normalizes the live top-level symbol map variant', async () => {
-    const symbolMap = Object.fromEntries(
-      symbols.slice(0, 5).map((symbol, index) => [
-        symbol,
-        {
-          symbol,
-          score: 80 - index * 5,
-          opinion: 'Promising but mixed',
-          confidence: 'medium',
-          evidenceIds: index === 0 ? [] : [`${symbol}-evidence`],
-          riskEvidenceIds: index === 0 ? [] : [`${symbol}-evidence`],
-        },
+  it('sends a strict score-free ranking schema', async () => {
+    await generateRecommendationIntelligence(request, 'recommendation-schema')
+    const body = JSON.parse(
+      String((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body),
+    )
+    const item = body.response_format.json_schema.schema.properties.rankings.items
+    expect(body.messages[0].content).toContain(
+      'must contain no digits or numeric values',
+    )
+    expect(item.additionalProperties).toBe(false)
+    expect(item.required).toEqual(
+      expect.arrayContaining([
+        'symbol',
+        'opinion',
+        'thesisRationale',
+        'mainConcern',
+        'whatToResearchNext',
+        'confidence',
+        'citationIds',
       ]),
     )
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(symbolMap)))
-
-    const output = await generateRecommendationIntelligence(
-      request,
-      'recommendation-symbol-map',
+    expect(item.properties.score).toBeUndefined()
+    expect(item.properties.symbol.enum).toEqual(symbols)
+    expect(item.properties.citationIds.items.enum).toEqual(
+      symbols.map((symbol) => `${symbol}-evidence`),
     )
-
-    expect(output.rankings.map((item) => item.symbol)).toEqual(
-      symbols.slice(0, 5),
-    )
-    expect(output.rankings[0]).toMatchObject({
-      score: 80,
-      confidence: 'medium',
-    })
-    expect(output.rankings[0].rationaleEvidence).toHaveLength(1)
+    expect(item.properties.citationIds.items.enum).not.toContain('unknown')
   })
 
   it('rejects an out-of-set symbol', async () => {
     const invalid = structuredClone(validOutput)
-    invalid.Rankings[0].Symbol = 'AAPL'
+    invalid.rankings[0].symbol = 'AAPL'
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(invalid)))
 
     await expect(
@@ -118,35 +113,62 @@ describe('generateRecommendationIntelligence', () => {
     ).rejects.toThrow('out-of-set symbol')
   })
 
-  it('rejects evidence attached to a different candidate', async () => {
-    const invalid = structuredClone(validOutput)
-    invalid.Rankings[0].RationaleEvidenceIds = [2]
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(invalid)))
+  it('rejects omitted and duplicate candidates', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        response({ rankings: validOutput.rankings.slice(0, -1) }),
+      ),
+    )
+    await expect(
+      generateRecommendationIntelligence(request, 'recommendation-omitted'),
+    ).rejects.toThrow('rank exactly')
 
+    resetGroundedIntelligenceStateForTests()
+    const duplicate = structuredClone(validOutput)
+    duplicate.rankings[1] = {
+      ...duplicate.rankings[1],
+      symbol: 'MSFT',
+      citationIds: ['MSFT-evidence'],
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(duplicate)))
+    await expect(
+      generateRecommendationIntelligence(request, 'recommendation-duplicate'),
+    ).rejects.toThrow('duplicate recommendation symbols')
+  })
+
+  it('rejects unknown or misattached evidence', async () => {
+    const unknown = structuredClone(validOutput)
+    unknown.rankings[0].citationIds = ['unknown']
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(unknown)))
+    await expect(
+      generateRecommendationIntelligence(request, 'recommendation-unknown'),
+    ).rejects.toThrow('unknown evidence ID')
+
+    resetGroundedIntelligenceStateForTests()
+    const misattached = structuredClone(validOutput)
+    misattached.rankings[0].citationIds = ['GOOGL-evidence']
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(misattached)))
     await expect(
       generateRecommendationIntelligence(request, 'recommendation-evidence'),
     ).rejects.toThrow('misattached evidence')
   })
 
-  it('rejects direct trade instructions', async () => {
-    const invalid = structuredClone(validOutput)
-    invalid.Rankings[0].Rationale = 'Buy because the evidence is supportive.'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(invalid)))
-
+  it('rejects direct trade instructions and score fields', async () => {
+    const advice = structuredClone(validOutput)
+    advice.rankings[0].thesisRationale = 'Buy because the evidence is supportive.'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(advice)))
     await expect(
       generateRecommendationIntelligence(request, 'recommendation-advice'),
     ).rejects.toThrow('prohibited investment advice')
-  })
 
-  it('rejects duplicate ranked symbols', async () => {
-    const invalid = structuredClone(validOutput)
-    invalid.Rankings[1].Symbol = 'MSFT'
-    invalid.Rankings[1].RationaleEvidenceIds = [1]
-    invalid.Rankings[1].RiskEvidenceIds = ['e1']
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(invalid)))
-
+    resetGroundedIntelligenceStateForTests()
+    const scored = {
+      rankings: validOutput.rankings.map((item) => ({ ...item, score: 80 })),
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(scored)))
     await expect(
-      generateRecommendationIntelligence(request, 'recommendation-duplicate'),
-    ).rejects.toThrow('duplicate recommendation symbols')
+      generateRecommendationIntelligence(request, 'recommendation-score'),
+    ).rejects.toThrow()
   })
 })

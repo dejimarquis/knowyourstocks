@@ -26,6 +26,7 @@ export const createDiscoverFingerprint = (
   })
 
 type StoredDiscoverResult = {
+  schemaVersion: 2
   fingerprint: string
   result: DiscoverResult
 }
@@ -42,13 +43,21 @@ export const loadDiscoverResult = (
     const stored = JSON.parse(raw) as StoredDiscoverResult
     const generatedAt = Date.parse(stored.result?.generatedAt)
     if (
+      stored.schemaVersion !== 2 ||
       stored.fingerprint !== fingerprint ||
-      stored.result?.version !== 1 ||
+      stored.result?.version !== 2 ||
       stored.result?.universeVersion !== discoverUniverseVersion ||
       !Array.isArray(stored.result?.recommendations) ||
+      stored.result.recommendations.some(
+        (recommendation) =>
+          !Array.isArray(recommendation.citations) ||
+          'aiScore' in recommendation ||
+          'score' in recommendation,
+      ) ||
       !Number.isFinite(generatedAt) ||
       now - generatedAt >= cacheLifetimeMs
     ) {
+      window.localStorage.removeItem(cacheStorageKey)
       return null
     }
     return stored.result
@@ -64,7 +73,7 @@ export const saveDiscoverResult = (
   try {
     window.localStorage.setItem(
       cacheStorageKey,
-      JSON.stringify({ fingerprint, result }),
+      JSON.stringify({ schemaVersion: 2, fingerprint, result }),
     )
   } catch {
     // Discover still works when browser storage is unavailable.

@@ -6,7 +6,9 @@ export type EvalEvidence = {
 
 type BaseFixture = {
   id: string
+  operation: 'research' | 'recommendations' | 'watchlist'
   thesis: string
+  source: string
   evidence: EvalEvidence[]
 }
 
@@ -14,10 +16,8 @@ export type ResearchEvalFixture = BaseFixture & {
   operation: 'research'
   symbol: string
   expected: {
-    scoreBand: [number, number]
-    opinions: string[]
+    opinions: Array<'Fits thesis' | 'Mixed' | 'Weak fit' | 'Insufficient evidence'>
     requiredEvidenceIds: string[]
-    confidence?: 'low' | 'medium' | 'high'
   }
 }
 
@@ -26,7 +26,7 @@ export type RecommendationEvalFixture = BaseFixture & {
   candidates: string[]
   expected: {
     topSymbols: string[]
-    omittedSymbols: string[]
+    bottomSymbols: string[]
   }
 }
 
@@ -35,7 +35,11 @@ export type WatchlistEvalFixture = BaseFixture & {
   symbols: string[]
   expected: {
     priorityEvidenceIds: string[]
-    assessmentSymbols: string[]
+    opinions: Record<
+      string,
+      Array<'Fits thesis' | 'Mixed' | 'Weak fit' | 'Insufficient evidence'>
+    >
+    stableSymbols: string[]
   }
 }
 
@@ -44,209 +48,511 @@ export type ModelEvalFixture =
   | RecommendationEvalFixture
   | WatchlistEvalFixture
 
-export const modelEvalDataset = {
-  version: 'foundry-mini-eval.v1.2026-07-23',
+const longTermAggressiveNote =
+  "Concentrate where you have conviction, diversify where you don't. Index + blue chip core; small, high-conviction bets on the periphery (quantum, rare earth, AI infra). Position sizing is the risk control, not avoidance.\n\nHigh risk tolerance, but only when the bet makes sense. Asymmetric upside, never gambling. Everything ladders to the 10-year thesis: inference to agentic to AI-for-science to robotics."
+
+const pltrEvidence: EvalEvidence[] = [
+  {
+    id: 'pltr:pe',
+    symbol: 'PLTR',
+    fact: 'Trailing price-to-earnings ratio: 129.16. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+  },
+  {
+    id: 'pltr:profit-margin',
+    symbol: 'PLTR',
+    fact: 'Profit margin: 43.7%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+  },
+  {
+    id: 'pltr:revenue-growth',
+    symbol: 'PLTR',
+    fact: 'Revenue growth: 67.7%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+  },
+  {
+    id: 'pltr:earnings-growth',
+    symbol: 'PLTR',
+    fact: 'Earnings growth: 287.8%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+  },
+  {
+    id: 'pltr:operating-margin',
+    symbol: 'PLTR',
+    fact: 'Operating margin: 38.1%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+  },
+  {
+    id: 'pltr:debt-equity',
+    symbol: 'PLTR',
+    fact: 'Debt-to-equity ratio: 0. Source: Finnhub; as-of date unavailable; period: quarterly.',
+  },
+  {
+    id: 'pltr:current-ratio',
+    symbol: 'PLTR',
+    fact: 'Current ratio: 6.91. Source: Finnhub; as-of date unavailable; period: quarterly.',
+  },
+  {
+    id: 'pltr:theme',
+    symbol: 'PLTR',
+    fact: 'Technology aligns with the selected AI infrastructure and technology themes.',
+  },
+  {
+    id: 'pltr:quality',
+    symbol: 'PLTR',
+    fact: 'Profitability supports the thesis: profit margin is 43.7% and return on equity is 32.2%.',
+  },
+  {
+    id: 'pltr:risk',
+    symbol: 'PLTR',
+    fact: 'Risk fit is mixed: beta is 1.57 compared with the market baseline of 1.00.',
+  },
+  {
+    id: 'pltr:valuation',
+    symbol: 'PLTR',
+    fact: 'Valuation weakens thesis fit: trailing price-to-earnings ratio is 129.2.',
+  },
+]
+
+const aggressiveThesis = `Growth; seven-plus-year horizon; aggressive risk; AI and technology. Optional thesis note: ${longTermAggressiveNote}`
+
+export const modelEvalDataset: {
+  version: string
+  fixtures: ModelEvalFixture[]
+} = {
+  version: 'opinion-intelligence-production-traces.v3.2026-07-26',
   fixtures: [
     {
-      id: 'research-quality-expensive',
+      id: 'research-pltr-balanced-quality',
+      operation: 'research',
+      symbol: 'PLTR',
+      thesis:
+        'Quality; seven-plus-year horizon; balanced risk; AI and technology.',
+      source:
+        'Production Research request captured 2026-07-26; numeric evidence is preserved from the request packet.',
+      evidence: pltrEvidence,
+      expected: {
+        opinions: ['Fits thesis', 'Mixed'],
+        requiredEvidenceIds: [
+          'pltr:quality',
+          'pltr:revenue-growth',
+          'pltr:risk',
+          'pltr:valuation',
+        ],
+      },
+    },
+    {
+      id: 'research-pltr-aggressive-growth-note',
+      operation: 'research',
+      symbol: 'PLTR',
+      thesis: aggressiveThesis,
+      source:
+        'Production Research request captured 2026-07-26 with the supplied long-term thesis note.',
+      evidence: pltrEvidence.filter((item) => item.id !== 'pltr:risk'),
+      expected: {
+        opinions: ['Fits thesis', 'Mixed'],
+        requiredEvidenceIds: [
+          'pltr:revenue-growth',
+          'pltr:earnings-growth',
+          'pltr:profit-margin',
+          'pltr:pe',
+        ],
+      },
+    },
+    {
+      id: 'research-crwv-aggressive-growth-note',
+      operation: 'research',
+      symbol: 'CRWV',
+      thesis: aggressiveThesis,
+      source:
+        'Production Research request captured 2026-07-26; the production call returned HTTP 503 after 13.0 seconds.',
+      evidence: [
+        {
+          id: 'crwv:profit-margin',
+          symbol: 'CRWV',
+          fact: 'Profit margin: -25.6%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'crwv:revenue-growth',
+          symbol: 'CRWV',
+          fact: 'Revenue growth: 111.6%. Source: SEC EDGAR; as of 2026-05-08; period: latest-comparable-filing.',
+        },
+        {
+          id: 'crwv:operating-margin',
+          symbol: 'CRWV',
+          fact: 'Operating margin: -2.6%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'crwv:debt-equity',
+          symbol: 'CRWV',
+          fact: 'Debt-to-equity ratio: 0.05. Source: Finnhub; as-of date unavailable; period: quarterly.',
+        },
+        {
+          id: 'crwv:current-ratio',
+          symbol: 'CRWV',
+          fact: 'Current ratio: 0.31. Source: Finnhub; as-of date unavailable; period: quarterly.',
+        },
+        {
+          id: 'crwv:theme',
+          symbol: 'CRWV',
+          fact: 'Technology aligns with the selected AI infrastructure and technology themes.',
+        },
+        {
+          id: 'crwv:growth',
+          symbol: 'CRWV',
+          fact: 'Revenue growth is 111.6%, while earnings growth is unavailable.',
+        },
+        {
+          id: 'crwv:quality',
+          symbol: 'CRWV',
+          fact: 'Profitability weakens thesis fit: profit margin is -25.6% and return on equity is -40.3%.',
+        },
+      ],
+      expected: {
+        opinions: ['Mixed', 'Weak fit'],
+        requiredEvidenceIds: [
+          'crwv:revenue-growth',
+          'crwv:growth',
+          'crwv:profit-margin',
+          'crwv:current-ratio',
+        ],
+      },
+    },
+    {
+      id: 'research-msft-aggressive-growth-note',
       operation: 'research',
       symbol: 'MSFT',
-      thesis: 'Long-term quality AI exposure with balanced risk.',
+      thesis: aggressiveThesis,
+      source:
+        'Production Research request captured 2026-07-26; the production call returned HTTP 503 after 14.6 seconds.',
       evidence: [
-        { id: 'e1', symbol: 'MSFT', fact: 'Technology and cloud align with the AI thesis.' },
-        { id: 'e2', symbol: 'MSFT', fact: 'Profit margin is strong and return on equity is high.' },
-        { id: 'e3', symbol: 'MSFT', fact: 'Revenue and EPS growth are positive.' },
-        { id: 'e4', symbol: 'MSFT', fact: 'Free cash flow is positive.' },
-        { id: 'e5', symbol: 'MSFT', fact: 'Valuation is above the quality-style target.' },
+        {
+          id: 'msft:pe',
+          symbol: 'MSFT',
+          fact: 'Trailing price-to-earnings ratio: 22.64. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'msft:profit-margin',
+          symbol: 'MSFT',
+          fact: 'Profit margin: 39.3%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'msft:revenue-growth',
+          symbol: 'MSFT',
+          fact: 'Revenue growth: 17.9%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'msft:earnings-growth',
+          symbol: 'MSFT',
+          fact: 'Earnings growth: 29.8%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'msft:operating-margin',
+          symbol: 'MSFT',
+          fact: 'Operating margin: 46.8%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'msft:debt-equity',
+          symbol: 'MSFT',
+          fact: 'Debt-to-equity ratio: 0. Source: Finnhub; as-of date unavailable; period: quarterly.',
+        },
+        {
+          id: 'msft:current-ratio',
+          symbol: 'MSFT',
+          fact: 'Current ratio: 1.28. Source: Finnhub; as-of date unavailable; period: quarterly.',
+        },
+        {
+          id: 'msft:theme',
+          symbol: 'MSFT',
+          fact: 'Technology aligns with the selected AI infrastructure and technology themes.',
+        },
+        {
+          id: 'msft:quality',
+          symbol: 'MSFT',
+          fact: 'Profitability supports the thesis: profit margin is 39.3% and return on equity is 33.1%.',
+        },
       ],
       expected: {
-        scoreBand: [68, 88],
-        opinions: ['Compelling', 'Promising but mixed'],
-        requiredEvidenceIds: ['e2', 'e5'],
-        confidence: 'high',
+        opinions: ['Fits thesis'],
+        requiredEvidenceIds: [
+          'msft:theme',
+          'msft:quality',
+          'msft:revenue-growth',
+          'msft:earnings-growth',
+        ],
       },
     },
     {
-      id: 'research-growth-unprofitable',
+      id: 'research-bloom-energy-balanced-quality',
       operation: 'research',
-      symbol: 'GROW',
-      thesis: 'Long-term growth with balanced risk and durable cash flow.',
+      symbol: 'BE',
+      thesis:
+        'Quality; seven-plus-year horizon; balanced risk; AI and technology.',
+      source:
+        'Production Bloom Energy Research packet captured 2026-07-24 after repeated model timeouts.',
       evidence: [
-        { id: 'e1', symbol: 'GROW', fact: 'Revenue growth is very strong.' },
-        { id: 'e2', symbol: 'GROW', fact: 'Profit and operating margins are negative.' },
-        { id: 'e3', symbol: 'GROW', fact: 'Free cash flow is negative.' },
-        { id: 'e4', symbol: 'GROW', fact: 'Beta is well above the balanced-risk range.' },
-        { id: 'e5', symbol: 'GROW', fact: 'Earnings growth is unavailable.' },
+        {
+          id: 'be:pe',
+          symbol: 'BE',
+          fact: 'Trailing price-to-earnings ratio: over 500. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'be:profit-margin',
+          symbol: 'BE',
+          fact: 'Profit margin: 0.3%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'be:revenue-growth',
+          symbol: 'BE',
+          fact: 'Revenue growth: 56.5%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'be:operating-margin',
+          symbol: 'BE',
+          fact: 'Operating margin: 2.7%. Source: Finnhub; as-of date unavailable; period: trailing-twelve-months.',
+        },
+        {
+          id: 'be:debt-equity',
+          symbol: 'BE',
+          fact: 'Debt-to-equity ratio: 0.03. Source: Finnhub; as-of date unavailable; period: quarterly.',
+        },
+        {
+          id: 'be:current-ratio',
+          symbol: 'BE',
+          fact: 'Current ratio: 5.03. Source: Finnhub; as-of date unavailable; period: quarterly.',
+        },
+        {
+          id: 'be:resilience',
+          symbol: 'BE',
+          fact: 'Market capitalization is $62 billion and profit margin is 0.3%.',
+        },
+        {
+          id: 'be:growth',
+          symbol: 'BE',
+          fact: 'Revenue growth is 56.5%, while earnings growth is unavailable.',
+        },
+        {
+          id: 'be:theme',
+          symbol: 'BE',
+          fact: 'Electrical Equipment is outside the selected AI and technology themes.',
+        },
+        {
+          id: 'be:quality',
+          symbol: 'BE',
+          fact: 'Profitability weakens thesis fit: profit margin is 0.3% and return on equity is 0.8%.',
+        },
+        {
+          id: 'be:risk',
+          symbol: 'BE',
+          fact: 'Risk fit weakens the thesis: beta is 3.93 compared with the market baseline of 1.00.',
+        },
       ],
       expected: {
-        scoreBand: [28, 58],
-        opinions: ['Watch closely', 'Reconsider'],
-        requiredEvidenceIds: ['e1', 'e2', 'e3'],
-        confidence: 'medium',
+        opinions: ['Mixed', 'Weak fit'],
+        requiredEvidenceIds: [
+          'be:growth',
+          'be:theme',
+          'be:quality',
+          'be:risk',
+        ],
       },
     },
     {
-      id: 'research-value-deteriorating',
+      id: 'research-ibm-negative-earnings',
       operation: 'research',
-      symbol: 'VALUE',
-      thesis: 'Value investing with conservative risk.',
+      symbol: 'IBM',
+      thesis:
+        'Quality growth; seven-plus-year horizon; balanced risk; AI and technology.',
+      source:
+        'Production SEC fallback response captured 2026-07-24 from IBM filing data dated 2026-07-23.',
       evidence: [
-        { id: 'e1', symbol: 'VALUE', fact: 'P/E is below the value target.' },
-        { id: 'e2', symbol: 'VALUE', fact: 'Revenue and earnings growth are negative.' },
-        { id: 'e3', symbol: 'VALUE', fact: 'Debt to equity increased materially.' },
-        { id: 'e4', symbol: 'VALUE', fact: 'Current ratio is below one.' },
-        { id: 'e5', symbol: 'VALUE', fact: 'Free cash flow remains positive but declined.' },
+        {
+          id: 'ibm:revenue',
+          symbol: 'IBM',
+          fact: 'Quarterly revenue: $17.162 billion. Source: SEC EDGAR; filing date: 2026-07-23.',
+        },
+        {
+          id: 'ibm:revenue-growth',
+          symbol: 'IBM',
+          fact: 'Comparable revenue growth: 1.09%. Source: SEC EDGAR; filing date: 2026-07-23.',
+        },
+        {
+          id: 'ibm:profit',
+          symbol: 'IBM',
+          fact: 'Net income: $2.165 billion and profit margin: 12.62%. Source: SEC EDGAR; filing date: 2026-07-23.',
+        },
+        {
+          id: 'ibm:earnings-growth',
+          symbol: 'IBM',
+          fact: 'Comparable earnings growth: -1.32%. Source: SEC EDGAR; filing date: 2026-07-23.',
+        },
+        {
+          id: 'ibm:roe',
+          symbol: 'IBM',
+          fact: 'Return on equity: 25.14%. Source: SEC EDGAR; filing date: 2026-07-23.',
+        },
+        {
+          id: 'ibm:coverage',
+          symbol: 'IBM',
+          fact: 'The captured SEC fallback did not provide current valuation, cash-flow, liquidity, or beta evidence.',
+        },
       ],
       expected: {
-        scoreBand: [25, 52],
-        opinions: ['Watch closely', 'Reconsider'],
-        requiredEvidenceIds: ['e1', 'e2', 'e3'],
-        confidence: 'high',
+        opinions: ['Mixed', 'Insufficient evidence'],
+        requiredEvidenceIds: [
+          'ibm:earnings-growth',
+          'ibm:revenue-growth',
+          'ibm:profit',
+          'ibm:coverage',
+        ],
       },
     },
     {
-      id: 'research-incomplete',
-      operation: 'research',
-      symbol: 'NEW',
-      thesis: 'Long-term manufacturing growth with balanced risk.',
+      id: 'discover-ai-infrastructure-ranking',
+      operation: 'recommendations',
+      thesis: aggressiveThesis,
+      source:
+        'Production Discover run captured 2026-07-24 with candidate set NVDA, CRM, AVGO, ORCL, and ADBE.',
+      candidates: ['NVDA', 'CRM', 'AVGO', 'ORCL', 'ADBE'],
       evidence: [
-        { id: 'e1', symbol: 'NEW', fact: 'Industry aligns with manufacturing.' },
-        { id: 'e2', symbol: 'NEW', fact: 'Revenue growth is positive.' },
-        { id: 'e3', symbol: 'NEW', fact: 'Margin, cash flow, debt, and valuation data are unavailable.' },
-        { id: 'e4', symbol: 'NEW', fact: 'Only one reporting period is available.' },
+        {
+          id: 'nvda:fit',
+          symbol: 'NVDA',
+          fact: 'NVIDIA has direct AI accelerator and AI infrastructure exposure with strong growth and margins.',
+        },
+        {
+          id: 'nvda:risk',
+          symbol: 'NVDA',
+          fact: 'NVIDIA carries valuation, volatility, and semiconductor concentration risk.',
+        },
+        {
+          id: 'crm:fit',
+          symbol: 'CRM',
+          fact: 'Salesforce has enterprise software AI exposure and positive cash flow.',
+        },
+        {
+          id: 'crm:risk',
+          symbol: 'CRM',
+          fact: 'Salesforce is less directly exposed to AI infrastructure than the infrastructure candidates.',
+        },
+        {
+          id: 'avgo:fit',
+          symbol: 'AVGO',
+          fact: 'Broadcom has AI networking and semiconductor infrastructure exposure with positive cash flow.',
+        },
+        {
+          id: 'avgo:risk',
+          symbol: 'AVGO',
+          fact: 'Broadcom carries semiconductor concentration and integration risk.',
+        },
+        {
+          id: 'orcl:fit',
+          symbol: 'ORCL',
+          fact: 'Oracle has cloud infrastructure exposure that aligns with long-term AI compute demand.',
+        },
+        {
+          id: 'orcl:risk',
+          symbol: 'ORCL',
+          fact: 'Oracle has execution and leverage uncertainty while expanding cloud infrastructure.',
+        },
+        {
+          id: 'adbe:fit',
+          symbol: 'ADBE',
+          fact: 'Adobe has profitable AI-enabled creative software and durable cash generation.',
+        },
+        {
+          id: 'adbe:risk',
+          symbol: 'ADBE',
+          fact: 'Adobe is application software rather than direct AI infrastructure and faces competitive uncertainty.',
+        },
       ],
       expected: {
-        scoreBand: [25, 60],
-        opinions: ['Watch closely'],
-        requiredEvidenceIds: ['e3', 'e4'],
-        confidence: 'low',
+        topSymbols: ['NVDA', 'AVGO', 'ORCL'],
+        bottomSymbols: ['CRM', 'ADBE'],
       },
     },
     {
-      id: 'recommendations-ai-quality',
-      operation: 'recommendations',
-      thesis: 'Long-term quality AI exposure with balanced risk.',
-      candidates: ['MSFT', 'GOOGL', 'NVDA', 'TSM', 'IBM', 'XOM'],
-      evidence: [
-        { id: 'e1', symbol: 'MSFT', fact: 'Strong margins, cash flow, and AI-aligned cloud exposure.' },
-        { id: 'e2', symbol: 'GOOGL', fact: 'Strong cash flow, AI exposure, and moderate valuation.' },
-        { id: 'e3', symbol: 'NVDA', fact: 'Very strong growth and AI alignment with high valuation and volatility.' },
-        { id: 'e4', symbol: 'TSM', fact: 'AI semiconductor exposure with geopolitical concentration risk.' },
-        { id: 'e5', symbol: 'IBM', fact: 'Quality cash flow and AI exposure with slower growth.' },
-        { id: 'e6', symbol: 'XOM', fact: 'Strong cash flow but outside the selected AI and technology themes.' },
-      ],
-      expected: { topSymbols: ['MSFT', 'GOOGL'], omittedSymbols: ['XOM'] },
-    },
-    {
-      id: 'recommendations-manufacturing',
-      operation: 'recommendations',
-      thesis: 'Long-term manufacturing and industrial automation with balanced risk.',
-      candidates: ['ETN', 'HON', 'CAT', 'ROK', 'TSLA', 'PFE'],
-      evidence: [
-        { id: 'e1', symbol: 'ETN', fact: 'Electrification and industrial exposure with strong margins.' },
-        { id: 'e2', symbol: 'HON', fact: 'Diversified industrial automation exposure and positive cash flow.' },
-        { id: 'e3', symbol: 'CAT', fact: 'Manufacturing alignment with cyclical demand risk.' },
-        { id: 'e4', symbol: 'ROK', fact: 'Direct factory automation exposure with moderate growth.' },
-        { id: 'e5', symbol: 'TSLA', fact: 'Manufacturing exposure with high volatility and valuation.' },
-        { id: 'e6', symbol: 'PFE', fact: 'Healthcare company outside the manufacturing thesis.' },
-      ],
-      expected: { topSymbols: ['ETN', 'HON'], omittedSymbols: ['PFE'] },
-    },
-    {
-      id: 'recommendations-healthcare',
-      operation: 'recommendations',
-      thesis: 'Long-term healthcare quality with conservative risk.',
-      candidates: ['JNJ', 'ABBV', 'LLY', 'ISRG', 'UNH', 'CVX'],
-      evidence: [
-        { id: 'e1', symbol: 'JNJ', fact: 'Diversified healthcare, lower beta, and positive cash flow.' },
-        { id: 'e2', symbol: 'ABBV', fact: 'Strong cash flow and income with product concentration risk.' },
-        { id: 'e3', symbol: 'LLY', fact: 'Strong growth and margins with expensive valuation.' },
-        { id: 'e4', symbol: 'ISRG', fact: 'Healthcare technology quality with expensive valuation.' },
-        { id: 'e5', symbol: 'UNH', fact: 'Healthcare scale and cash flow with policy risk.' },
-        { id: 'e6', symbol: 'CVX', fact: 'Energy company outside the healthcare thesis.' },
-      ],
-      expected: { topSymbols: ['JNJ', 'ABBV'], omittedSymbols: ['CVX'] },
-    },
-    {
-      id: 'recommendations-diversification',
-      operation: 'recommendations',
-      thesis: 'Quality growth with less technology concentration.',
-      candidates: ['BRK.B', 'JNJ', 'COST', 'XOM', 'MSFT', 'NVDA'],
-      evidence: [
-        { id: 'e1', symbol: 'BRK.B', fact: 'Diversified non-technology cash-generating businesses.' },
-        { id: 'e2', symbol: 'JNJ', fact: 'Healthcare diversification with lower beta.' },
-        { id: 'e3', symbol: 'COST', fact: 'Consumer quality and durable cash flow.' },
-        { id: 'e4', symbol: 'XOM', fact: 'Energy diversification with commodity cyclicality.' },
-        { id: 'e5', symbol: 'MSFT', fact: 'High quality but adds technology concentration.' },
-        { id: 'e6', symbol: 'NVDA', fact: 'Strong growth but adds semiconductor concentration and volatility.' },
-      ],
-      expected: { topSymbols: ['BRK.B', 'JNJ', 'COST'], omittedSymbols: ['NVDA'] },
-    },
-    {
-      id: 'watchlist-stable',
+      id: 'watchlist-stable-production',
       operation: 'watchlist',
-      thesis: 'Long-term quality technology with balanced risk.',
-      symbols: ['MSFT', 'GOOGL'],
+      thesis:
+        'Quality growth; seven-plus-year horizon; balanced risk; AI and technology.',
+      source:
+        'Stable Watchlist case derived from the captured PLTR and MSFT production Research packets.',
+      symbols: ['PLTR', 'MSFT'],
       evidence: [
-        { id: 'e1', symbol: 'MSFT', fact: 'Fit, margins, growth, cash flow, and valuation are materially unchanged.' },
-        { id: 'e2', symbol: 'GOOGL', fact: 'Fit, margins, growth, cash flow, and valuation are materially unchanged.' },
-        { id: 'e3', symbol: 'MSFT', fact: 'No near-term earnings event is present.' },
-        { id: 'e4', symbol: 'GOOGL', fact: 'No near-term earnings event is present.' },
+        {
+          id: 'stable:pltr',
+          symbol: 'PLTR',
+          fact: 'No verified material change is present versus the prior PLTR review; growth, profitability, liquidity, and valuation evidence are unchanged.',
+        },
+        {
+          id: 'stable:msft',
+          symbol: 'MSFT',
+          fact: 'No verified material change is present versus the prior MSFT review; growth, profitability, liquidity, and valuation evidence are unchanged.',
+        },
       ],
       expected: {
         priorityEvidenceIds: [],
-        assessmentSymbols: ['MSFT', 'GOOGL'],
+        opinions: {
+          PLTR: ['Fits thesis', 'Mixed', 'Insufficient evidence'],
+          MSFT: ['Fits thesis', 'Mixed', 'Insufficient evidence'],
+        },
+        stableSymbols: ['PLTR', 'MSFT'],
       },
     },
     {
-      id: 'watchlist-deterioration',
+      id: 'watchlist-changing-production',
       operation: 'watchlist',
-      thesis: 'Long-term quality growth with balanced risk.',
-      symbols: ['GOOD', 'DRIFT'],
+      thesis: aggressiveThesis,
+      source:
+        'Changing Watchlist case combines captured CRWV, Bloom Energy, and MSFT production evidence.',
+      symbols: ['CRWV', 'BE', 'MSFT'],
       evidence: [
-        { id: 'e1', symbol: 'GOOD', fact: 'Fundamentals and thesis fit are stable.' },
-        { id: 'e2', symbol: 'DRIFT', fact: 'Free cash flow declined materially.' },
-        { id: 'e3', symbol: 'DRIFT', fact: 'Debt to equity increased and liquidity weakened.' },
-        { id: 'e4', symbol: 'DRIFT', fact: 'Thesis-fit score fell into limited-match range.' },
+        {
+          id: 'change:crwv-liquidity',
+          symbol: 'CRWV',
+          fact: 'CRWV current ratio is 0.31, indicating weak captured liquidity.',
+        },
+        {
+          id: 'change:crwv-profit',
+          symbol: 'CRWV',
+          fact: 'CRWV profit margin is -25.6% and operating margin is -2.6%.',
+        },
+        {
+          id: 'change:crwv-growth',
+          symbol: 'CRWV',
+          fact: 'CRWV revenue growth is 111.6%, while earnings growth is unavailable.',
+        },
+        {
+          id: 'change:be-quality',
+          symbol: 'BE',
+          fact: 'Bloom Energy profit margin is 0.3% and return on equity is 0.8%.',
+        },
+        {
+          id: 'change:be-risk',
+          symbol: 'BE',
+          fact: 'Bloom Energy beta is 3.93 compared with the market baseline of 1.00.',
+        },
+        {
+          id: 'change:be-growth',
+          symbol: 'BE',
+          fact: 'Bloom Energy revenue growth is 56.5%, while earnings growth is unavailable.',
+        },
+        {
+          id: 'change:msft-stable',
+          symbol: 'MSFT',
+          fact: 'No verified material change is present for MSFT; profitability and growth evidence remain supportive.',
+        },
       ],
       expected: {
-        priorityEvidenceIds: ['e2', 'e3', 'e4'],
-        assessmentSymbols: ['GOOD', 'DRIFT'],
+        priorityEvidenceIds: [
+          'change:crwv-liquidity',
+          'change:crwv-profit',
+          'change:be-quality',
+          'change:be-risk',
+        ],
+        opinions: {
+          CRWV: ['Mixed', 'Weak fit'],
+          BE: ['Mixed', 'Weak fit'],
+          MSFT: ['Fits thesis'],
+        },
+        stableSymbols: ['MSFT'],
       },
     },
-    {
-      id: 'watchlist-earnings',
-      operation: 'watchlist',
-      thesis: 'Long-term growth with balanced risk.',
-      symbols: ['REPORT', 'STABLE'],
-      evidence: [
-        { id: 'e1', symbol: 'REPORT', fact: 'Earnings are expected within three days.' },
-        { id: 'e2', symbol: 'REPORT', fact: 'Margin and cash-flow data are incomplete.' },
-        { id: 'e3', symbol: 'REPORT', fact: 'Revenue growth remains strong.' },
-        { id: 'e4', symbol: 'STABLE', fact: 'No material business change is present.' },
-      ],
-      expected: {
-        priorityEvidenceIds: ['e1', 'e2'],
-        assessmentSymbols: ['REPORT', 'STABLE'],
-      },
-    },
-    {
-      id: 'watchlist-concentration',
-      operation: 'watchlist',
-      thesis: 'Long-term AI exposure without excessive concentration.',
-      symbols: ['NVDA', 'AMD', 'AVGO', 'TSM', 'JNJ'],
-      evidence: [
-        { id: 'e1', symbol: 'watchlist', fact: 'Four of five positions are semiconductor companies.' },
-        { id: 'e2', symbol: 'NVDA', fact: 'Strong growth with high valuation.' },
-        { id: 'e3', symbol: 'AMD', fact: 'AI exposure with weaker margins than the group leader.' },
-        { id: 'e4', symbol: 'AVGO', fact: 'Strong cash flow with semiconductor concentration.' },
-        { id: 'e5', symbol: 'TSM', fact: 'Semiconductor exposure with geopolitical risk.' },
-        { id: 'e6', symbol: 'JNJ', fact: 'Healthcare position provides limited diversification.' },
-      ],
-      expected: {
-        priorityEvidenceIds: ['e1'],
-        assessmentSymbols: ['NVDA', 'AMD', 'AVGO', 'TSM', 'JNJ'],
-      },
-    },
-  ] satisfies ModelEvalFixture[],
+  ],
 }

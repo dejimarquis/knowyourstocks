@@ -77,7 +77,7 @@ const securityInsights = (
           change < 0
             ? `${item.symbol} fit weakened`
             : `${item.symbol} fit improved`,
-        summary: `The thesis-fit score changed ${formatPoints(change)} to ${currentFit}.`,
+        summary: `The deterministic Fit changed ${formatPoints(change)} to ${currentFit}.`,
         evidence: [
           {
             label: 'Thesis fit',
@@ -100,8 +100,8 @@ const securityInsights = (
         ? `${item.symbol} fit coverage weakened`
         : `${item.symbol} fit coverage improved`,
       summary: coverageLost
-        ? 'The current data no longer supports a complete thesis-fit score.'
-        : `New data now supports a ${currentFit}-point thesis-fit score.`,
+        ? 'The current data no longer supports a complete deterministic Fit.'
+        : `New data now supports a deterministic Fit of ${currentFit}.`,
       evidence: [
         {
           label: 'Thesis fit',
@@ -487,10 +487,11 @@ export const generateWatchlistBrief = (
       .map((item) => `${item.symbol}: ${item.reviewError}`),
     prioritizedSignalIds: [],
     prioritizedEvidenceIds: [],
-    aiSummary: null,
-    aiAssessments: [],
+    prioritizedEvidence: [],
+    modelOverallOpinion: null,
+    modelOverallSummary: null,
+    stockOpinions: [],
     crossStockPatterns: [],
-    aiUncertainties: [],
     modelStatus: watchlist.modelPreferences.enablePhi ? 'loading' : 'disabled',
   }
 }

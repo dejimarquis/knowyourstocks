@@ -10,7 +10,7 @@ import {
 } from './discoverStorage'
 
 const result: DiscoverResult = {
-  version: 1,
+  version: 2,
   universeVersion: 1,
   generatedAt: '2026-07-23T20:00:00.000Z',
   modelStatus: 'fallback',
@@ -39,5 +39,28 @@ describe('discover storage', () => {
 
     expect(getDiscoverCooldownRemaining(31_000)).toBe(30_000)
     expect(getDiscoverCooldownRemaining(61_000)).toBe(0)
+  })
+
+  it('discards legacy score-bearing cached recommendations', () => {
+    const fingerprint = createDiscoverFingerprint(defaultThesis, [], [], null)
+    window.localStorage.setItem(
+      'knowyourstocks.discoverCache',
+      JSON.stringify({
+        fingerprint,
+        result: {
+          version: 1,
+          universeVersion: 1,
+          generatedAt: result.generatedAt,
+          modelStatus: 'generated',
+          providerErrors: 0,
+          recommendations: [{ aiScore: 88 }],
+        },
+      }),
+    )
+
+    expect(loadDiscoverResult(fingerprint, Date.parse(result.generatedAt))).toBeNull()
+    expect(
+      window.localStorage.getItem('knowyourstocks.discoverCache'),
+    ).toBeNull()
   })
 })

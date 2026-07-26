@@ -1,5 +1,11 @@
 import { z } from 'zod'
 import type { SecuritySnapshot } from '../data/alphaVantage'
+import {
+  citedClaimSchema,
+  citationSchema,
+  confidenceSchema,
+  opinionSchema,
+} from '../intelligence/contracts'
 import type { FitScore } from '../scoring/scoreSecurity'
 
 export const watchlistLimit = 25
@@ -137,32 +143,19 @@ export const watchlistBriefSchema = z.object({
   errors: z.array(z.string()),
   prioritizedSignalIds: z.array(z.string()).default([]),
   prioritizedEvidenceIds: z.array(z.string()).default([]),
-  aiSummary: z.string().nullable().default(null),
-  aiAssessments: z
+  prioritizedEvidence: z.array(citationSchema).default([]),
+  modelOverallOpinion: opinionSchema.nullable().default(null),
+  modelOverallSummary: citedClaimSchema.nullable().default(null),
+  stockOpinions: z
     .array(
       z.object({
         symbol: z.string(),
-        score: z.number().int().min(0).max(100),
-        opinion: z.enum([
-          'Compelling',
-          'Promising but mixed',
-          'Watch closely',
-          'Reconsider',
-        ]),
-        summary: z.string(),
-        strengths: z.array(
-          z.object({
-            evidenceId: z.string(),
-            text: z.string(),
-          }),
-        ),
-        risks: z.array(
-          z.object({
-            evidenceId: z.string(),
-            text: z.string(),
-          }),
-        ),
-        confidence: z.enum(['low', 'medium', 'high']),
+        opinion: opinionSchema,
+        whatChanged: citedClaimSchema,
+        whyItFits: z.array(citedClaimSchema).max(4),
+        concerns: z.array(citedClaimSchema).max(4),
+        whatToWatchNext: z.array(citedClaimSchema).max(4),
+        confidence: confidenceSchema,
       }),
     )
     .default([]),
@@ -170,14 +163,13 @@ export const watchlistBriefSchema = z.object({
     .array(
       z.object({
         title: z.string(),
-        explanation: z.string(),
-        evidenceIds: z.array(z.string()),
-        confidence: z.enum(['low', 'medium', 'high']),
-        thesisRelationship: z.string(),
+        summary: z.string(),
+        citationIds: z.array(z.string()),
+        citations: z.array(citationSchema),
+        confidence: confidenceSchema,
       }),
     )
     .default([]),
-  aiUncertainties: z.array(z.string()).default([]),
   modelStatus: z
     .enum([
       'not_requested',
@@ -191,7 +183,7 @@ export const watchlistBriefSchema = z.object({
 })
 
 const currentWatchlistSchema = z.object({
-  version: z.literal(2),
+  version: z.literal(3),
   items: z.array(watchlistItemSchema).max(watchlistLimit),
   lastReviewAt: z.string().nullable(),
   lastWeeklyReviewKey: z.string().nullable(),
@@ -212,13 +204,41 @@ const migrateWatchlist = (value: unknown): unknown => {
   }
 
   const stored = value as Record<string, unknown>
-  if (stored.version !== 1 && stored.version !== 2) {
+  if (stored.version !== 1 && stored.version !== 2 && stored.version !== 3) {
     return value
   }
 
+  const legacyBrief =
+    stored.version !== 3 &&
+    typeof stored.latestBrief === 'object' &&
+    stored.latestBrief != null &&
+    !Array.isArray(stored.latestBrief)
+      ? (stored.latestBrief as Record<string, unknown>)
+      : null
+
   return {
     ...stored,
-    version: 2,
+    version: 3,
+    ...(legacyBrief
+      ? {
+          latestBrief: {
+            generatedAt: legacyBrief.generatedAt,
+            reviewType: legacyBrief.reviewType,
+            deterministicInsights: legacyBrief.deterministicInsights,
+            experimentalInsights: [],
+            stableSymbols: legacyBrief.stableSymbols,
+            errors: legacyBrief.errors,
+            prioritizedSignalIds: [],
+            prioritizedEvidenceIds: [],
+            prioritizedEvidence: [],
+            modelOverallOpinion: null,
+            modelOverallSummary: null,
+            stockOpinions: [],
+            crossStockPatterns: [],
+            modelStatus: 'not_requested',
+          },
+        }
+      : {}),
     modelPreferences: {
       enablePhi: true,
       ...(typeof stored.modelPreferences === 'object' &&
@@ -245,11 +265,11 @@ export type WatchlistItem = z.infer<typeof watchlistItemSchema>
 export type Watchlist = z.infer<typeof watchlistSchema>
 export type WatchlistInsight = z.infer<typeof watchlistInsightSchema>
 export type WatchlistBrief = z.infer<typeof watchlistBriefSchema>
-export type WatchlistAssessment = WatchlistBrief['aiAssessments'][number]
+export type WatchlistStockOpinion = WatchlistBrief['stockOpinions'][number]
 export type WatchlistPattern = WatchlistBrief['crossStockPatterns'][number]
 
 export const emptyWatchlist: Watchlist = {
-  version: 2,
+  version: 3,
   items: [],
   lastReviewAt: null,
   lastWeeklyReviewKey: null,

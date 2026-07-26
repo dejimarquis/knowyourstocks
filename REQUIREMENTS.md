@@ -1,249 +1,136 @@
-# Know Your Stocks: Intelligence v2 Requirements
+# Know Your Stocks: Opinion Intelligence Requirements
 
 ## Product goal
 
-Build a minimalist, beginner-first educational tool for researching US common stocks against a user-defined investment thesis. The product explains evidence and uncertainty; it is not a brokerage, portfolio manager, return-prediction system, or personalized financial adviser.
+Build a minimalist, beginner-first educational tool for researching US common stocks against a user-defined investment thesis. The product explains evidence and uncertainty; it is not a brokerage, return-prediction system, or personalized financial adviser.
 
-## Current scope
+## Core decisions
 
-| Area | Current decision |
+| Area | Requirement |
 | --- | --- |
-| Audience | Beginner-first, with optional deeper evidence |
-| Research universe | Provider-supported US common stocks with adequate data |
-| Discover universe | Curated liquid US common stocks; no ETFs initially |
-| Accounts and sync | None; personal state stays in the browser |
-| Thesis | Guided structured fields plus an optional private note |
-| Authoritative score | Deterministic 0–100 thesis Fit with factor evidence |
-| AI output | Separate thesis-evidence assessment, never a return forecast |
-| AI triggers | Visible Research result without a matching AI cache, Discover refresh, or requested Watchlist review |
-| Cached page load | Research may request AI when its AI cache is missing; Discover and Watchlist remain passive |
-| Watchlist | Browser-local, up to 25 stocks |
-| Reviews | Manual; the UI marks the first visit in a new week as due but does not run automatically |
-| Alerts | In-app review signals only; no email, SMS, push, or background notification |
-| Cloud | Azure Static Web Apps managed Functions and Azure Foundry |
-| Cost | Low capacity and bounded usage; $25 budget is alert-only |
+| Authoritative score | Deterministic 0–100 thesis Fit with visible factor evidence |
+| AI output | Separate opinion intelligence; never a numeric AI score |
+| Research/Discover model | `gpt-5-mini-intelligence` |
+| Watchlist model | `gpt-oss-120b-intelligence` |
+| Cleanup target | Keep GPT-5-mini and gpt-oss-120b; remove Phi deployments after live verification |
+| Personal state | Browser-local; no accounts or cross-device sync |
+| Model boundary | Strict request-specific JSON Schema plus server-side validation |
+| Failure behavior | Retry transient failure once, then preserve deterministic fallback |
 
 ## Product principles
 
 - Explain rather than dictate.
-- Keep deterministic calculations authoritative and visible.
-- Label AI output separately and treat it as optional, untrusted evidence synthesis.
-- Show source, period, and freshness where available.
-- Distinguish missing data from poor performance.
-- Never invent provider values, candidate symbols, evidence, or model output.
-- Never describe Fit or AI evidence scores as expected-return predictions.
-- Do not call Discover or Watchlist AI on passive page loads. Research should make its AI take available whenever a stock result is visible.
+- Keep deterministic Fit separate, authoritative, and visible.
+- Treat model output as optional, untrusted evidence synthesis.
+- Never return an AI numeric score or describe Fit as a return prediction.
+- Never show or request hidden chain-of-thought; show concise cited reasoning summaries.
+- Show source, period, freshness, uncertainty, confidence, and missing data honestly.
+- Never invent provider values, candidate symbols, evidence, numeric claims, or model output.
 - Fall back to complete deterministic behavior when any provider or model step fails.
+
+## Opinion output
+
+The canonical opinion output is:
+
+1. opinion;
+2. concise reasoning summary;
+3. why it fits;
+4. concerns;
+5. what to watch or research next;
+6. uncertainty;
+7. confidence; and
+8. citations.
+
+Research exposes all fields directly. Discover and Watchlist use equivalent operation-specific labels, including thesis rationale, main concern, what changed, overall summary, and next research/watch step.
+
+All citations must map to evidence supplied in the same request. Hidden `reasoning_content` is ignored and is never stored or displayed.
 
 ## Research
 
-When a stock result is visible, Research:
+When a stock result is visible, Research obtains provider evidence, selectively fills supported missing fundamentals from SEC EDGAR, normalizes values and provenance, calculates deterministic Fit, and may request a separate opinion.
 
-1. obtains a real provider snapshot;
-2. selectively fills missing fundamentals from SEC EDGAR;
-3. normalizes values and metric-level provenance;
-4. calculates deterministic Fit locally; and
-5. may request a separate grounded AI assessment.
-
-The research page shows:
-
-- company, ticker, classification, delayed or end-of-day price, and freshness;
-- valuation, growth, profitability, operating margin, free cash flow, leverage, liquidity, resilience, and other available metrics;
-- expandable beginner definitions;
-- deterministic Fit, factor contributions, conflicts, missing data, and evidence;
-- a distinct AI thesis-evidence score from 0–100;
-- one of `Compelling`, `Promising but mixed`, `Watch closely`, or `Reconsider`;
-- grounded strengths, risks or gaps, confidence, cache/freshness status, and unavailable fallback.
-
-The AI score measures support in the supplied evidence. It does not replace Fit, alter Fit factors, recommend a trade, or predict returns. A restored cached security reuses a matching six-hour AI cache or requests a new take when that AI cache is missing.
-
-## Fundamental data and provenance
-
-Finnhub normalization must:
-
-- map `epsGrowthTTMYoy` to earnings growth;
-- convert provider percentages to decimal application values;
-- convert provider free-cash-flow millions to currency units;
-- include operating margin, free cash flow, debt-to-equity, and current ratio;
-- preserve existing values when a refresh omits a metric;
-- attach metric-level source and period metadata.
-
-Expected provenance sources are:
-
-- **Finnhub:** trailing-twelve-month or quarterly provider metrics; the provider may not supply a metric date;
-- **Alpha Vantage:** provider-reported values associated with its latest reported quarter when available;
-- **SEC EDGAR:** selectively derived values tied to the latest comparable filing date.
-
-SEC remains a selective fundamentals fallback, not a quote provider. It fills supported missing profit margin, revenue growth, EPS, return on equity, or earnings growth evidence without overwriting available provider values.
+The opinion must use one of `Fits thesis`, `Mixed`, `Weak fit`, or `Insufficient evidence` and return the complete cited output contract. A cached stock may reuse a matching six-hour opinion cache or request a new opinion when the cache is missing or expired.
 
 ## Discover
 
-Discover is a manual-refresh workflow. No recommendation provider or model spend occurs merely by opening the page.
+Discover is manual and must not spend provider or model calls on page load. It uses the curated liquid-US common-stock universe plus accepted peer context, excludes watched/current symbols, fetches at most eight candidates, and shows at most five.
 
-Each refresh:
+The model may order only the supplied candidates and must return each exactly once with an opinion, thesis rationale, concern, next research step, confidence, and citations. Any invalid, unavailable, timed-out, or rate-limited response leaves deterministic Fit ordering and explanations available.
 
-1. starts from the versioned curated liquid-US common-stock universe;
-2. uses up to two recent/current symbols as Finnhub peer seeds;
-3. accepts only peers that also exist in the curated universe;
-4. excludes watched symbols and the currently researched symbol;
-5. prioritizes thesis themes, style, and peer proximity;
-6. fetches at most eight candidates;
-7. selectively SEC-enriches at most three incomplete candidates;
-8. shows at most five recommendations.
+## Watchlist
 
-When five valid candidates exist, grounded AI may rank exactly those five and supply a thesis-evidence score, opinion, confidence, rationale, and risk for each. It may not add or substitute a symbol. If AI fails validation, times out, is rate-limited, or is unavailable, deterministic Fit order, rationale, and risk remain usable. Partial provider results are explicitly labeled. ETFs are deferred from the initial Discover universe.
+The watchlist stores up to 25 stocks locally. A requested review persists the deterministic brief before model completion and assesses every supplied stock, including stable stocks.
 
-## Watchlist and reviews
+Business-first signals cover Fit drift, growth, margins, cash flow, leverage, liquidity, valuation, filings, earnings, concentration, freshness, and supported context. There is no standalone daily-price-move alert.
 
-The watchlist stores up to 25 stocks in browser storage. A requested review refreshes current data, retains the previous snapshot and Fit, and persists the deterministic brief before AI completes.
+Each model stock assessment includes an opinion, cited change summary, cited fit points, cited concerns, cited next-watch points, and confidence. Optional cross-stock patterns require at least two distinct supplied symbols. Invalid optional patterns may be dropped without failing a valid core review.
 
-Deterministic review signals are business-first:
+## Grounded API requirements
 
-- material Fit changes and thesis drift;
-- revenue and earnings growth;
-- profit and operating margin;
-- EPS and free cash flow;
-- debt-to-equity and current ratio;
-- material valuation changes;
-- newer filing or reporting periods;
-- earnings within 14 days;
-- stale or failed data;
-- concentration;
-- previously stored or future licensed headline-sentiment context.
-
-There is no standalone daily-move alert. A large latest-day move may appear only as context attached to a business, filing, or earnings signal. Headline sentiment is context, not business evidence. Automatic Finnhub sentiment refresh is deferred because common free personal keys receive HTTP 403 for that optional endpoint.
-
-When Phi is enabled, every requested review sends compact current and previous evidence for every watched stock, including stocks with no deterministic change signal. A valid response must assess every supplied stock exactly once and may also prioritize verified signals and identify cross-stock patterns supported by evidence from at least two distinct symbols.
-
-The UI exposes these model statuses:
-
-- `not_requested` — migrated older review;
-- `loading` — deterministic brief is already available while AI runs;
-- `generated` — validated AI summary, per-stock assessments, and any patterns are available;
-- `fallback` — AI failed or did not pass validation;
-- `disabled` — user disabled Phi for the review;
-- `rate_limited` — a process-local model limit was reached.
-
-All fallback, disabled, and rate-limited states retain the deterministic brief.
-
-## Shared grounded intelligence API
-
-Research, Discover, and Watchlist use one shared Foundry client with operation-specific request and response schemas.
+Research, Discover, and Watchlist share one Foundry client with operation-specific request validation and request-specific strict JSON Schema output.
 
 Required controls:
 
-- compact evidence packets and bounded request sizes;
-- operation-specific Zod validation;
-- evidence aliases mapped back to supplied evidence;
-- rejection of unknown, duplicate, insufficient, excessive, or symbol-mismatched evidence;
-- exact supplied-symbol constraints for recommendations and watchlist assessments;
-- rejection of direct trade language, price targets, guarantees, and invented numeric claims;
-- normalization of common schema variants before strict final validation;
-- temperature zero, JSON mode, and bounded output tokens;
-- one retry for a timeout, HTTP 429, or server error;
-- six-hour in-process response cache separated by deployment, operation, and request;
-- configurable process-local global and browser daily limits;
-- timeout and HTTP status mapping;
-- deterministic fallback on every failure path.
+- citation enums derived from the request's evidence IDs;
+- symbol enums derived from the supplied Discover candidates or Watchlist stocks;
+- `additionalProperties: false`, required fields, bounded arrays, and fixed enums;
+- server-side citation existence, uniqueness, count, and symbol-attachment checks;
+- exact candidate/stock coverage;
+- generated-narrative digit and numeric-word rejection;
+- invented numeric-claim, direct-advice, guarantee, and price-target rejection;
+- optional invalid Watchlist pattern dropping;
+- one bounded retry for timeout, HTTP 429, or server error;
+- six-hour validated-response cache keyed by deployment, operation, schema, and request;
+- deterministic fallback after every failure;
+- visible `message.content` only; ignore hidden `reasoning_content`.
 
-Current default output ceilings are 360 tokens for Research, 450 for Discover recommendations, and 1600 for Watchlist. Current default process-local controls are a 25-second attempt timeout, 500 calls per process window, and 10 calls per browser per process window. These controls can reset on cold start or scale-out and are not a durable billing ceiling.
+The global attempt cap is 12 seconds; current operation calls use 11 seconds. Process-local global and browser limits reduce bursts but are not durable spending ceilings.
 
 ## Model selection
 
-The frozen Research, recommendation, and Watchlist bake-off selected **Phi-4-mini-instruct**, deployed as `phi-4-mini-watchlist`, as the single global winner.
+### Selected route
 
-Observed evidence:
+- GPT-5-mini for Research and Discover.
+- gpt-oss-120b for Watchlist.
 
-- Phi-4-mini-reasoning produced stronger reasoning on some Research cases, but observed chunks took roughly 39–54 seconds.
-- Reasoning produced malformed recommendation outputs, confused evidence with symbols, and had lower aggregate reliability.
-- Phi-4-mini-instruct produced usable successful responses in roughly 2.6–8.6 seconds and grounded recommendation and Watchlist tasks better.
-- Instruct still experienced intermittent low-capacity serverless timeouts.
-- Neither model met the aspirational 95% raw-schema-validity gate.
+GPT-5-mini delivered the strongest nuanced Research and Discover quality. The final concurrent run generated 24/24 Research and 20/20 Discover responses with strict grounding. Estimated cost was about $0.0021 and $0.0019 per call.
 
-Therefore production must retain normalization, strict evidence validation, bounded retries, caching, rate limits, and deterministic fallback. The selected model is a practical reliability choice, not a claim that raw model output is independently safe.
+### Rejected or rollback choices
 
-## Privacy and local data
+GPT-4.1-mini deployment creation was rejected because the requested Azure model version is deprecating in April 2027. It is not an appropriate new production dependency.
 
-Versioned browser storage may contain:
+The earlier broad Watchlist schema was too slow on GPT-5-mini and could exhaust output on gpt-oss. The final bounded schema requires one concise fit, concern, and watch item per stock. gpt-oss-120b then generated 20/20 grounded strict responses with 4.725 quality, 11.732-second p95, and about $0.000487 per call.
 
-- thesis and optional note;
-- watchlist, current and previous snapshots, Fits, briefs, model status, and feedback;
-- cached Research AI assessments;
-- cached Discover results;
-- recent/current symbols and interface preferences;
-- a random intelligence client identifier.
+Phi is not selected: both Phi-4-mini variants rejected the strict JSON Schema request, and JSON-mode probes timed out or returned invalid shapes. After live verification remove every Phi deployment and the legacy `FOUNDRY_DEPLOYMENT` setting; retain `gpt-5-mini-intelligence` and `gpt-oss-120b-intelligence`.
 
-The Finnhub key stays in `sessionStorage` and goes directly to Finnhub. It must not enter the managed intelligence APIs.
+## Evaluation acceptance evidence
 
-Structured thesis fields and any non-empty free-text thesis note are sent to Foundry when Research AI loads or after an explicit Discover/Watchlist AI action. The note is included automatically to improve thesis-aware analysis. See `SECURITY.md` for packet details.
+The production-derived dataset covers PLTR, CRWV, MSFT, Bloom Energy, Discover, and stable/changing Watchlist cases.
 
-## Azure architecture and cost
+- GPT-5-mini Research: 23/24 first-attempt generated, quality 4.792, p95 11.316s, about $0.001928/call.
+- GPT-5-mini Discover: 20/20, quality 4.750, p95 8.382s, about $0.001908/call.
+- GPT-5-mini Watchlist: multi-stock reliability failed the concurrent release gate even after increasing capacity and allowing a 20-second attempt.
+- gpt-oss-120b Watchlist: 20/20, quality 4.725, p95 11.732s, about $0.000487/call with the final concise strict schema.
 
-Use:
+Production retries the transient failure class represented by the single Research first-attempt timeout. Pricing is estimated from the public Azure catalog/calculator and is not contractual.
 
-1. Azure Static Web Apps Free for the SPA and managed Functions.
-2. Same-origin SEC, Research intelligence, recommendation intelligence, and Watchlist intelligence endpoints.
-3. One low-capacity Azure Foundry serverless deployment: `phi-4-mini-watchlist`.
-4. A $25 Azure budget alert for visibility.
+## Privacy
 
-Azure Table quota code, SDK dependency, Bicep module, post-provision hook, connection setting, and durable monthly hard-stop claims have been removed. The budget alert does not block Foundry calls. Cost control depends on low capacity, bounded tokens, caches, process-local limits, short timeouts, 429 handling, and deterministic fallback.
+The structured thesis, optional note, watchlist, snapshots, Fits, briefs, and caches remain browser-local. A non-empty thesis note is included in an opinion request because it is part of the user's thesis context.
 
-Do not add a database, Key Vault, API Management, dedicated Function App, or background worker for this friend beta unless later requirements justify it.
+Packets contain compact supplied evidence and never contain the Finnhub key. Citations are mapped to that supplied evidence. Raw prompts and packets are not intentionally persisted server-side; validated responses may remain in the six-hour in-process cache. Hidden model reasoning is not displayed or stored.
 
-## Provider and legal boundary
+## Validation
 
-The friend beta uses bring-your-own-key Finnhub research. Each tester supplies a personal, non-commercial key. Alpha Vantage remains limited to the public IBM demo. SEC EDGAR supplies official filing facts through the same-origin API.
+The current suite contains 66 frontend tests, 47 API tests, and 30 Playwright journeys. These are current suite counts, not deployment proof. Required validation also includes lint, builds, hands-on browser testing, app-setting checks, and live verification of all three operation routes, cache behavior, retry/fallback, citations, privacy disclosure, accessibility, and responsive layout.
 
-This arrangement does not grant rights to redistribute centrally licensed live market data. A future shared provider or broader public recommendation product still requires explicit display, caching, attribution, and derived-data rights.
-
-## Safety and accessibility
-
-- Display educational-information and not-investment-advice language.
-- Avoid imperative trade language, certainty, guarantees, and price targets.
-- Show unavailable instead of fabricating missing data.
-- Do not redistribute article text.
-- Support keyboard and screen readers, WCAG 2.2 AA core flows, reduced motion, and non-color-only status cues.
-- Clearly distinguish deterministic Fit, AI evidence assessment, stale data, provider partials, cache results, and model fallback.
-
-## Validation before push or deployment
-
-Run the existing lint, web tests, API tests, browser tests, and builds. In addition, complete hands-on local browser testing for:
-
-- automatic Research AI for visible stock results with six-hour cache reuse;
-- separate deterministic Fit and AI assessment;
-- Discover manual refresh, exclusions, limits, partial results, and fallback;
-- Watchlist business-first signals and absence of a standalone daily-move alert;
-- stable-stock per-stock AI assessment;
-- every model status and deterministic fallback;
-- mobile and desktop layout, keyboard flow, and visible evidence/provenance.
-
-Do not claim intelligence v2 is deployed until validation, push, deployment, and live verification are complete.
-
-## Cleanup manifest
-
-Keep:
-
-- the Azure Static Web App;
-- the Foundry account;
-- winning deployment `phi-4-mini-watchlist`;
-- the $25 budget alert.
-
-Current live cleanup candidates:
-
-- Storage account `sthqjzjkf5lnc4k`;
-- Static Web Apps settings `INTELLIGENCE_USAGE_STORAGE_CONNECTION_STRING` and `FOUNDRY_MAX_MONTHLY_CALLS`;
-- losing deployments `phi-4-mini-reasoning-watchlist`, `phi-4-reasoning-watchlist`, and `phi-4-watchlist`;
-- the attached monitoring/project chain only if dependency review proves it is not needed.
-
-Cleanup is destructive. Verify dependencies and obtain explicit destructive confirmation before deleting any resource or setting.
+Do not mark the routing deployed until app settings are validated, the change is deployed, each operation succeeds live, fallback and rollback are checked, and unused deployment cleanup is explicitly approved.
 
 ## Non-goals
 
 - Brokerage, holdings, trading, portfolio accounting, or return prediction.
 - Accounts or cross-device sync.
-- Automatic background reviews or notifications.
+- Background reviews or notifications.
 - Intraday streaming.
-- ETF recommendations in the initial Discover universe.
 - Open-ended AI chat, autonomous actions, or ungrounded investment analysis.
-- A durable application-level Foundry billing stop.
-- A database for user state.
+- Durable application-level Foundry billing enforcement.

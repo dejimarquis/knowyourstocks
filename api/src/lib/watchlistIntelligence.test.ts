@@ -17,20 +17,6 @@ const request = parseIntelligenceRequest({
     {
       symbol: 'MSFT',
       name: 'Microsoft',
-      currentSnapshot: {
-        earningsGrowth: 0.12,
-        operatingMargin: 0.44,
-        freeCashFlow: 74_000_000_000,
-        debtToEquity: 0.4,
-        currentRatio: 1.3,
-        metricProvenance: {
-          earningsGrowth: {
-            source: 'Finnhub',
-            asOf: '2026-06-30',
-            period: 'TTM',
-          },
-        },
-      },
       evidence: [
         {
           id: 'msft-stable',
@@ -54,39 +40,59 @@ const request = parseIntelligenceRequest({
   deterministicSignals: [],
 })
 
-const response = (content: unknown, status = 200) =>
+const response = (content: unknown) =>
   new Response(
     JSON.stringify({
       choices: [{ message: { content: JSON.stringify(content) } }],
     }),
-    { status },
+    { status: 200 },
   )
 
+const claim = (text: string, citationId: string) => ({
+  text,
+  citationIds: [citationId],
+})
+
 const stableOutput = {
-  summary: 'Both companies remain supported by stable business evidence.',
-  priorityEvidenceIds: [],
-  assessments: [
+  overallOpinion: 'Fits thesis',
+  overallSummary: claim(
+    'Both companies remain supported by stable business evidence.',
+    'msft-stable',
+  ),
+  prioritizedEvidenceIds: [],
+  stocks: [
     {
-      symbol: 'msft',
-      score: 8,
-      opinion: 'promising BUT mixed',
-      summary: 'Business evidence remains stable.',
-      strengthEvidenceIds: [1],
-      riskEvidenceIds: ['e1'],
-      confidence: 'HIGH',
+      symbol: 'MSFT',
+      opinion: 'Fits thesis',
+      whatChanged: claim('No material change', 'msft-stable'),
+      whyItFits: [
+        claim('Margins and cash flow remain aligned with the thesis.', 'msft-stable'),
+      ],
+      concerns: [
+        claim('The supplied evidence is limited to the stable update.', 'msft-stable'),
+      ],
+      whatToWatchNext: [
+        claim('Watch for a verified change in business evidence.', 'msft-stable'),
+      ],
+      confidence: 'high',
     },
     {
-      symbol: 'googl',
-      score: 75,
-      opinion: 'Compelling',
-      summary: 'Thesis fit remains stable.',
-      strengthEvidenceIds: ['2'],
-      riskEvidenceIds: ['e2'],
+      symbol: 'GOOGL',
+      opinion: 'Fits thesis',
+      whatChanged: claim('No material change', 'googl-stable'),
+      whyItFits: [
+        claim('Business evidence remains aligned with the thesis.', 'googl-stable'),
+      ],
+      concerns: [
+        claim('The supplied evidence is limited to the stable update.', 'googl-stable'),
+      ],
+      whatToWatchNext: [
+        claim('Watch for a verified change in business evidence.', 'googl-stable'),
+      ],
       confidence: 'medium',
     },
   ],
   crossStockPatterns: [],
-  uncertainties: [],
 }
 
 describe('generateWatchlistIntelligence', () => {
@@ -94,186 +100,119 @@ describe('generateWatchlistIntelligence', () => {
     resetGroundedIntelligenceStateForTests()
     process.env.FOUNDRY_OPENAI_ENDPOINT = 'https://example.openai.azure.com'
     process.env.FOUNDRY_API_KEY = 'test-key'
-    process.env.FOUNDRY_DEPLOYMENT = 'phi-test'
+    process.env.FOUNDRY_DEPLOYMENT = 'gpt-5-mini-intelligence'
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(stableOutput)))
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
+  afterEach(() => vi.unstubAllGlobals())
 
-  it('assesses every supplied stock in a stable watchlist', async () => {
+  it('returns a stable, cited opinion for every supplied stock without scores', async () => {
     const output = await generateWatchlistIntelligence(request, 'stable-client')
 
-    expect(fetch).toHaveBeenCalledOnce()
     expect(output.prioritizedEvidenceIds).toEqual([])
-    expect(output.assessments.map((item) => item.symbol)).toEqual([
+    expect(output.stocks.map((item) => item.symbol)).toEqual(['MSFT', 'GOOGL'])
+    expect(output.stocks[0]).toMatchObject({
+      opinion: 'Fits thesis',
+      confidence: 'high',
+      whatChanged: { text: 'No material change' },
+    })
+    expect(output.stocks.every((stock) => !('score' in stock))).toBe(true)
+    expect(output.stocks[0].whyItFits[0].citations[0].text).toContain(
+      'materially unchanged',
+    )
+  })
+
+  it('limits every strict citation field to supplied evidence IDs', async () => {
+    await generateWatchlistIntelligence(request, 'watchlist-schema-client')
+    const body = JSON.parse(
+      String((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body),
+    )
+    const schema = body.response_format.json_schema.schema
+    const allowed = ['msft-stable', 'googl-stable']
+
+    expect(body.messages[0].content).toContain(
+      'must contain no digits or numeric values',
+    )
+    expect(schema.$defs.claim.properties.citationIds.items.enum).toEqual(allowed)
+    expect(
+      schema.properties.crossStockPatterns.items.properties.citationIds.items
+        .enum,
+    ).toEqual(allowed)
+    expect(schema.properties.prioritizedEvidenceIds.items.enum).toEqual(allowed)
+    expect(schema.properties.stocks.items.properties.symbol.enum).toEqual([
       'MSFT',
       'GOOGL',
     ])
-    expect(output.assessments[0]).toMatchObject({
-      score: 80,
-      opinion: 'Compelling',
-      confidence: 'high',
-    })
-    expect(output.assessments[0].strengths[0].text).toContain('unchanged')
-  })
-
-  it('normalizes the live top-level stock map variant', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        response({
-          MSFT: {
-            symbol: 'MSFT',
-            score: 3,
-            opinion: 'Watch closely',
-            strengthEvidenceIds: ['e1'],
-            riskEvidenceIds: ['e1'],
-            confidence: 0.7,
-          },
-          GOOGL: {
-            symbol: 'GOOGL',
-            score: 3,
-            opinion: 'Watch closely',
-            strengthEvidenceIds: ['e2'],
-            riskEvidenceIds: ['e2'],
-            confidence: 0.7,
-          },
-        }),
-      ),
+    expect(schema.$defs.claim.properties.citationIds.items.enum).not.toContain(
+      'invented-id',
     )
-
-    const output = await generateWatchlistIntelligence(
-      request,
-      'symbol-map-client',
-    )
-
-    expect(output.assessments).toHaveLength(2)
-    expect(output.assessments[0]).toMatchObject({
-      symbol: 'MSFT',
-      score: 30,
-      confidence: 'medium',
-    })
-  })
-
-  it('validates all assessment evidence before limiting display to three', async () => {
-    const denseRequest = parseIntelligenceRequest({
-      version: 2,
-      thesis: request.thesis,
-      stocks: [
-        {
-          symbol: 'MSFT',
-          name: 'Microsoft',
-          evidence: [1, 2, 3, 4].map((index) => ({
-            id: `msft-${index}`,
-            symbol: 'MSFT',
-            text: `Verified Microsoft evidence ${index}.`,
-          })),
-        },
-      ],
-      deterministicSignals: [],
-    })
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        response({
-          MSFT: {
-            symbol: 'MSFT',
-            score: 70,
-            opinion: 'Promising but mixed',
-            strengthEvidenceIds: [1, 2, 3, 4],
-            riskEvidenceIds: [1, 2, 3, 4],
-            confidence: 'medium',
-          },
-        }),
-      ),
-    )
-
-    const output = await generateWatchlistIntelligence(
-      denseRequest,
-      'dense-evidence-client',
-    )
-
-    expect(output.assessments[0].strengths).toHaveLength(3)
-    expect(output.assessments[0].risks).toHaveLength(3)
-  })
-
-  it('bounds the server-generated assessment summary', async () => {
-    const longText = 'Grounded evidence '.repeat(20)
-    const longRequest = parseIntelligenceRequest({
-      version: 2,
-      thesis: request.thesis,
-      stocks: [
-        {
-          symbol: 'MSFT',
-          name: 'Microsoft',
-          evidence: [
-            { id: 'long-support', symbol: 'MSFT', text: longText },
-            { id: 'long-risk', symbol: 'MSFT', text: longText },
-          ],
-        },
-      ],
-      deterministicSignals: [],
-    })
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        response({
-          MSFT: {
-            symbol: 'MSFT',
-            score: 70,
-            opinion: 'Promising but mixed',
-            strengthEvidenceIds: [1],
-            riskEvidenceIds: [2],
-            confidence: 'medium',
-          },
-        }),
-      ),
-    )
-
-    const output = await generateWatchlistIntelligence(
-      longRequest,
-      'bounded-summary-client',
-    )
-
-    expect(output.assessments[0].summary.length).toBeLessThanOrEqual(300)
   })
 
   it('rejects unknown prioritized evidence', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        response({ ...stableOutput, priorityEvidenceIds: ['e99'] }),
+        response({ ...stableOutput, prioritizedEvidenceIds: ['e99'] }),
       ),
     )
-
     await expect(
       generateWatchlistIntelligence(request, 'unknown-evidence-client'),
     ).rejects.toThrow('unknown evidence ID')
   })
 
-  it('rejects evidence attached to another stock assessment', async () => {
+  it('rejects evidence attached to another stock', async () => {
     const invalid = structuredClone(stableOutput)
-    invalid.assessments[0].strengthEvidenceIds = [2]
+    invalid.stocks[0].whyItFits[0].citationIds = ['googl-stable']
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(invalid)))
-
     await expect(
       generateWatchlistIntelligence(request, 'misattached-client'),
     ).rejects.toThrow('misattached evidence')
   })
 
-  it('rejects out-of-set assessment symbols', async () => {
-    const invalid = structuredClone(stableOutput)
-    invalid.assessments[1].symbol = 'NVDA'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(invalid)))
-
+  it('rejects out-of-set or omitted stock symbols', async () => {
+    const outOfSet = structuredClone(stableOutput)
+    outOfSet.stocks[1].symbol = 'NVDA'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(outOfSet)))
     await expect(
       generateWatchlistIntelligence(request, 'out-of-set-client'),
     ).rejects.toThrow('out-of-set symbol')
+
+    resetGroundedIntelligenceStateForTests()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        response({ ...stableOutput, stocks: stableOutput.stocks.slice(0, 1) }),
+      ),
+    )
+    await expect(
+      generateWatchlistIntelligence(request, 'omitted-client'),
+    ).rejects.toThrow('assess every supplied')
   })
 
-  it('rejects duplicate relationship evidence', async () => {
+  it('dedupes valid pattern citations and drops invalid optional patterns', async () => {
+    const validPattern = {
+      title: 'Shared stable evidence',
+      summary: 'Both businesses have stable evidence relevant to the thesis.',
+      citationIds: ['msft-stable', 'msft-stable', 'googl-stable'],
+      confidence: 'medium',
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        response({ ...stableOutput, crossStockPatterns: [validPattern] }),
+      ),
+    )
+    const output = await generateWatchlistIntelligence(
+      request,
+      'valid-pattern-client',
+    )
+    expect(output.crossStockPatterns[0].citations).toHaveLength(2)
+    expect(output.crossStockPatterns[0].citationIds).toEqual([
+      'msft-stable',
+      'googl-stable',
+    ])
+
+    resetGroundedIntelligenceStateForTests()
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -281,47 +220,112 @@ describe('generateWatchlistIntelligence', () => {
           ...stableOutput,
           crossStockPatterns: [
             {
-              title: 'Shared stability',
-              explanation: 'Both businesses show stable evidence.',
-              evidenceIds: ['e1', 'e1'],
+              ...validPattern,
+              citationIds: ['msft-stable', 'msft-stable'],
+            },
+            {
+              ...validPattern,
+              title: 'Buy both companies',
+              citationIds: ['msft-stable', 'googl-stable'],
+            },
+            {
+              title: 'Malformed optional pattern',
+              citationIds: ['msft-stable', 'googl-stable'],
               confidence: 'medium',
-              thesisRelationship: 'The pattern is relevant to quality.',
+            },
+          ],
+        }),
+      ),
+    )
+    const dropped = await generateWatchlistIntelligence(
+      request,
+      'invalid-pattern-client',
+    )
+    expect(dropped.stocks).toHaveLength(2)
+    expect(dropped.crossStockPatterns).toEqual([])
+  })
+
+  it('drops patterns with evidence misattached to a non-watchlist symbol', async () => {
+    const requestWithMisattachedEvidence = parseIntelligenceRequest({
+      ...request,
+      stocks: request.stocks.map((stock) =>
+        stock.symbol === 'MSFT'
+          ? {
+              ...stock,
+              evidence: [
+                ...stock.evidence,
+                {
+                  id: 'other-symbol',
+                  symbol: 'NVDA',
+                  text: 'Evidence belongs to another symbol.',
+                },
+              ],
+            }
+          : stock,
+      ),
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        response({
+          ...stableOutput,
+          crossStockPatterns: [
+            {
+              title: 'Misattached relationship',
+              summary: 'The relationship uses evidence from another symbol.',
+              citationIds: ['other-symbol', 'googl-stable'],
+              confidence: 'medium',
             },
           ],
         }),
       ),
     )
 
-    await expect(
-      generateWatchlistIntelligence(request, 'duplicate-pattern-client'),
-    ).rejects.toThrow('duplicate relationship evidence')
+    const output = await generateWatchlistIntelligence(
+      requestWithMisattachedEvidence,
+      'misattached-pattern-client',
+    )
+    expect(output.stocks).toHaveLength(2)
+    expect(output.crossStockPatterns).toEqual([])
   })
 
-  it('rejects direct trade instructions in stock narratives', async () => {
-    const invalid = structuredClone(stableOutput)
-    invalid.assessments[0].summary = 'Buy because business evidence is stable.'
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(invalid)))
-
+  it('rejects trade commands and score fields', async () => {
+    const advice = structuredClone(stableOutput)
+    advice.stocks[0].whatChanged.text = 'Buy because evidence is stable.'
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(advice)))
     await expect(
       generateWatchlistIntelligence(request, 'advice-client'),
     ).rejects.toThrow('prohibited investment advice')
+
+    resetGroundedIntelligenceStateForTests()
+    const scored = structuredClone(stableOutput) as typeof stableOutput & {
+      score: number
+    }
+    scored.score = 75
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(scored)))
+    await expect(
+      generateWatchlistIntelligence(request, 'score-client'),
+    ).rejects.toThrow()
   })
 
-  it('keeps the legacy empty-signal response compatible without a model call', async () => {
+  it('returns a truthful fallback for an empty legacy request', async () => {
     const legacy = parseIntelligenceRequest({
       version: 1,
       thesis: request.thesis,
       deterministicSignals: [],
     })
-
     const output = await generateWatchlistIntelligence(legacy, 'legacy-client')
 
     expect(fetch).not.toHaveBeenCalled()
-    expect(output.prioritizedSignalIds).toEqual([])
-    expect(output.experimentalPatterns).toEqual([])
+    expect(output).toMatchObject({
+      overallOpinion: 'Insufficient evidence',
+      prioritizedSignalIds: [],
+      prioritizedEvidenceIds: [],
+      stocks: [],
+    })
   })
 
-  it('preserves legacy watchlist-level signals', async () => {
+  it('maps prioritized deterministic signals to trusted evidence text', async () => {
     const legacy = parseIntelligenceRequest({
       version: 1,
       thesis: request.thesis,
@@ -347,23 +351,27 @@ describe('generateWatchlistIntelligence', () => {
       'fetch',
       vi.fn().mockResolvedValue(
         response({
-          summary: 'Concentration deserves review.',
-          priorityEvidenceIds: [1],
-          assessments: [],
+          overallOpinion: 'Mixed',
+          overallSummary: claim(
+            'Watchlist concentration is the main verified concern.',
+            'concentration:watchlist:0',
+          ),
+          prioritizedEvidenceIds: ['concentration:watchlist:0'],
+          stocks: [],
           crossStockPatterns: [],
-          uncertainties: [],
         }),
       ),
     )
-
     const output = await generateWatchlistIntelligence(
       legacy,
-      'legacy-concentration-client',
+      'legacy-signal-client',
     )
 
-    expect(fetch).toHaveBeenCalledOnce()
     expect(output.prioritizedSignalIds).toEqual([
       'concentration:watchlist:0',
     ])
+    expect(output.prioritizedEvidence[0].text).toContain(
+      'Watchlist concentration',
+    )
   })
 })

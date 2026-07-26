@@ -46,12 +46,54 @@ const metricResponse = {
 }
 
 const intelligenceResponse = {
-  score: 78,
-  opinion: 'Promising but mixed',
-  summary: 'The grounded evidence supports the thesis with some constraints.',
-  strengths: [{ evidenceId: 'fit:quality', text: 'Quality evidence is supportive.' }],
-  risks: [{ evidenceId: 'fit:valuation', text: 'Valuation remains a constraint.' }],
+  opinion: 'Mixed',
+  headline: 'Quality supports the thesis, while valuation needs attention.',
+  reasoningSummary: {
+    text: 'The grounded evidence supports the thesis with some constraints.',
+    citationIds: ['fit:quality'],
+    citations: [{
+      evidenceId: 'fit:quality',
+      symbol: 'IBM',
+      text: 'Quality supports your thesis.',
+    }],
+  },
+  whyItFits: [{
+    text: 'Quality evidence is supportive.',
+    citationIds: ['fit:quality'],
+    citations: [{
+      evidenceId: 'fit:quality',
+      symbol: 'IBM',
+      text: 'Quality supports your thesis.',
+    }],
+  }],
+  concerns: [{
+    text: 'Valuation remains a constraint.',
+    citationIds: ['fit:valuation'],
+    citations: [{
+      evidenceId: 'fit:valuation',
+      symbol: 'IBM',
+      text: 'Valuation weakens the thesis fit.',
+    }],
+  }],
+  whatToWatchNext: [{
+    text: 'Review operating margin in the next filing.',
+    citationIds: ['metric:operatingMargin'],
+    citations: [{
+      evidenceId: 'metric:operatingMargin',
+      symbol: 'IBM',
+      text: 'Operating margin: 18.4%.',
+    }],
+  }],
   confidence: 'high',
+  uncertainty: {
+    text: 'Future operating performance remains uncertain.',
+    citationIds: ['metric:operatingMargin'],
+    citations: [{
+      evidenceId: 'metric:operatingMargin',
+      symbol: 'IBM',
+      text: 'Operating margin: 18.4%.',
+    }],
+  },
 }
 
 const jsonResponse = (value: unknown, status = 200) =>
@@ -155,7 +197,7 @@ describe('SecurityLookup', () => {
     await screen.findByRole('heading', {
       name: 'International Business Machines',
     })
-    await screen.findByLabelText('78 out of 100')
+    await screen.findByText(intelligenceResponse.headline)
     firstRender.unmount()
 
     render(<SecurityLookup {...defaultProps} />)
@@ -192,13 +234,66 @@ describe('SecurityLookup', () => {
 
     expect(await screen.findByText('Fit')).toBeInTheDocument()
     expect(
-      await screen.findByText('AI take could not load'),
+      await screen.findByText('Model opinion could not load'),
     ).toBeInTheDocument()
     expect(screen.getByText('Fit')).toBeInTheDocument()
     expect(
       screen.queryByText('AI evidence score'),
     ).not.toBeInTheDocument()
   })
+
+  it.each([
+    [
+      429,
+      {
+        error: 'Research opinion limit reached.',
+        code: 'INTELLIGENCE_LIMIT_REACHED',
+        retryable: true,
+      },
+      'Model opinion limit reached',
+      true,
+    ],
+    [
+      400,
+      {
+        error: 'Invalid intelligence request.',
+        code: 'INVALID_REQUEST',
+        retryable: false,
+      },
+      'Model opinion could not load',
+      false,
+    ],
+  ] as const)(
+    'renders truthful safe-error copy for HTTP %s',
+    async (status, body, heading, retryable) => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValueOnce(jsonResponse(quoteResponse))
+          .mockResolvedValueOnce(jsonResponse(profileResponse))
+          .mockResolvedValueOnce(jsonResponse(metricResponse))
+          .mockResolvedValueOnce(jsonResponse(body, status)),
+      )
+
+      render(<SecurityLookup {...defaultProps} />)
+      fireEvent.click(screen.getByText('Data access'))
+      fireEvent.change(screen.getByLabelText('Free Finnhub key'), {
+        target: { value: apiKey },
+      })
+      fireEvent.change(screen.getByLabelText('Company or ticker'), {
+        target: { value: researchSymbol },
+      })
+      fireEvent.click(screen.getByRole('button', { name: 'Search' }))
+
+      expect(await screen.findByText(heading)).toBeInTheDocument()
+      const retry = screen.queryByRole('button', {
+        name: 'Try model opinion again',
+      })
+      expect(Boolean(retry)).toBe(retryable)
+      expect(screen.getByText('Fit')).toBeInTheDocument()
+    },
+  )
 
   it('automatically requests AI when cached research is present', async () => {
     window.localStorage.setItem(
@@ -247,14 +342,16 @@ describe('SecurityLookup', () => {
     expect(
       screen.getByText('International Business Machines'),
     ).toBeInTheDocument()
-    expect(await screen.findByText('AI evidence score')).toBeInTheDocument()
+    expect(
+      await screen.findByText(intelligenceResponse.headline),
+    ).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(onSecurityResearched).toHaveBeenCalledWith(
       expect.objectContaining({ symbol: 'IBM' }),
     )
   })
 
-  it('shows the separate grounded AI score, evidence, confidence, and disclosure', async () => {
+  it('shows the opinion, reasoning sections, confidence, citations, and disclosure', async () => {
     vi.stubGlobal(
       'fetch',
       vi
@@ -276,14 +373,22 @@ describe('SecurityLookup', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
 
     expect(
-      await screen.findByText('AI evidence score'),
+      await screen.findByText(intelligenceResponse.headline),
     ).toBeInTheDocument()
-    expect(screen.getByLabelText('78 out of 100')).toBeInTheDocument()
-    expect(screen.getByText('Promising but mixed')).toBeInTheDocument()
+    expect(screen.queryByText(/out of 100/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Mixed')).toBeInTheDocument()
     expect(screen.getByText('high confidence')).toBeInTheDocument()
     expect(screen.getByText('Quality evidence is supportive.')).toBeInTheDocument()
+    expect(screen.getByText('Valuation remains a constraint.')).toBeInTheDocument()
     expect(
-      screen.getByText(/Model: Azure AI Foundry grounded assessment/),
+      screen.getByText('Review operating margin in the next filing.'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Future operating performance remains uncertain.'),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Sources (1)').length).toBeGreaterThan(0)
+    expect(
+      screen.getByText(/Model: Azure AI Foundry grounded opinion/),
     ).toBeInTheDocument()
     expect(screen.getByText(/does not predict returns/i)).toBeInTheDocument()
   })
@@ -297,14 +402,23 @@ describe('SecurityLookup', () => {
     }
     const staleResponse = {
       ...intelligenceResponse,
-      score: 22,
-      summary: 'Stale IBM assessment.',
+      headline: 'Stale IBM opinion.',
+      reasoningSummary: {
+        ...intelligenceResponse.reasoningSummary,
+        text: 'Stale IBM assessment.',
+      },
     }
     const currentResponse = {
       ...intelligenceResponse,
-      score: 91,
-      opinion: 'Compelling',
-      summary: 'Current Microsoft assessment.',
+      opinion: 'Fits thesis',
+      headline: 'Current Microsoft opinion.',
+      reasoningSummary: {
+        ...intelligenceResponse.reasoningSummary,
+        text: 'Current Microsoft assessment.',
+        citations: intelligenceResponse.reasoningSummary.citations.map(
+          (citation) => ({ ...citation, symbol: 'MSFT' }),
+        ),
+      },
     }
     const fetchMock = vi
       .fn()
@@ -340,14 +454,14 @@ describe('SecurityLookup', () => {
     expect(
       await screen.findByRole('heading', { name: 'Microsoft' }),
     ).toBeInTheDocument()
-    expect(await screen.findByLabelText('91 out of 100')).toBeInTheDocument()
+    expect(await screen.findByText('Current Microsoft opinion.')).toBeInTheDocument()
 
     await act(async () => {
       firstIntelligence.resolve(jsonResponse(staleResponse))
       await firstIntelligence.promise
     })
 
-    expect(screen.getByLabelText('91 out of 100')).toBeInTheDocument()
+    expect(screen.getByText('Current Microsoft opinion.')).toBeInTheDocument()
     expect(screen.queryByText('Stale IBM assessment.')).not.toBeInTheDocument()
   })
 })

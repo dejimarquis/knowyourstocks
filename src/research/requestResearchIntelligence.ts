@@ -1,9 +1,16 @@
 import { z } from 'zod'
 import type { SecuritySnapshot } from '../data/alphaVantage'
 import type { InvestmentThesis } from '../domain/thesis'
+import {
+  citedClaimSchema,
+  confidenceSchema,
+  intelligenceErrorFromResponse,
+  opinionSchema,
+} from '../intelligence/contracts'
 import type { FitScore } from '../scoring/scoreSecurity'
 
-const cachePrefix = 'knowyourstocks.researchIntelligence.v1'
+const cachePrefix = 'knowyourstocks.researchIntelligence.v2'
+const legacyCachePrefix = 'knowyourstocks.researchIntelligence.v1'
 const clientStorageKey = 'knowyourstocks.intelligenceClient'
 const cacheLifetimeMs = 6 * 60 * 60 * 1000
 const inFlightRequests = new Map<
@@ -17,23 +24,18 @@ const evidenceSchema = z.object({
   text: z.string(),
 })
 
-const responseSchema = z.object({
-  score: z.number().int().min(0).max(100),
-  opinion: z.enum([
-    'Compelling',
-    'Promising but mixed',
-    'Watch closely',
-    'Reconsider',
-  ]),
-  summary: z.string().min(1),
-  strengths: z.array(
-    z.object({ evidenceId: z.string(), text: z.string().min(1) }),
-  ),
-  risks: z.array(
-    z.object({ evidenceId: z.string(), text: z.string().min(1) }),
-  ),
-  confidence: z.enum(['low', 'medium', 'high']),
-})
+const responseSchema = z
+  .object({
+    opinion: opinionSchema,
+    headline: z.string().min(1).max(140),
+    reasoningSummary: citedClaimSchema,
+    whyItFits: z.array(citedClaimSchema).max(4),
+    concerns: z.array(citedClaimSchema).max(4),
+    whatToWatchNext: z.array(citedClaimSchema).max(4),
+    confidence: confidenceSchema,
+    uncertainty: citedClaimSchema,
+  })
+  .strict()
 
 const cachedResponseSchema = z.object({
   fingerprint: z.string(),
@@ -307,7 +309,20 @@ const writeCache = (
       }),
     )
   } catch {
-    // A storage failure should not hide an otherwise valid assessment.
+    // A storage failure should not hide an otherwise valid opinion.
+  }
+}
+
+const discardLegacyCache = () => {
+  try {
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index)
+      if (key?.startsWith(legacyCachePrefix)) {
+        window.localStorage.removeItem(key)
+      }
+    }
+  } catch {
+    // Legacy cache cleanup is best effort.
   }
 }
 
@@ -326,6 +341,7 @@ export const requestResearchIntelligence = async (
   request: ResearchIntelligenceRequest,
   signal?: AbortSignal,
 ): Promise<ResearchIntelligenceResult> => {
+  discardLegacyCache()
   const cached = readCache(request)
   if (cached) {
     return cached
@@ -349,7 +365,7 @@ export const requestResearchIntelligence = async (
     })
 
     if (!response.ok) {
-      throw new Error(`Research intelligence returned HTTP ${response.status}.`)
+      throw await intelligenceErrorFromResponse(response)
     }
 
     const intelligence = responseSchema.parse(await response.json())

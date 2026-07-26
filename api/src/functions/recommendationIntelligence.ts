@@ -4,7 +4,7 @@ import {
   type HttpResponseInit,
   type InvocationContext,
 } from '@azure/functions'
-import { intelligenceErrorStatus } from '../lib/groundedIntelligence'
+import { intelligenceErrorResponse } from '../lib/groundedIntelligence'
 import {
   generateRecommendationIntelligence,
   parseRecommendationIntelligenceRequest,
@@ -35,10 +35,7 @@ const handler = async (
         ? error.message
         : 'Recommendation intelligence failed.'
     context.error(`Recommendation intelligence failed: ${message}`)
-    return {
-      status: intelligenceErrorStatus(error),
-      jsonBody: { error: message },
-    }
+    return intelligenceErrorResponse(error)
   }
 }
 

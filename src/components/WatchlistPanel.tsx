@@ -1,5 +1,6 @@
 import { watchlistLimit, type Watchlist } from '../domain/watchlist'
 import { isWeeklyReviewDue } from '../watchlist/generateWatchlistBrief'
+import { IntelligenceCitations } from './IntelligenceCitations'
 
 type WatchlistPanelProps = {
   watchlist: Watchlist
@@ -30,15 +31,16 @@ const formatDate = (value: string) =>
   }).format(new Date(value))
 
 const modelStatusMessage = {
-  not_requested: 'AI was not requested for this older review.',
+  not_requested:
+    'No compatible model opinion is stored for this review. Run Review to request one.',
   loading:
-    'The deterministic brief is ready. Phi is reviewing the verified evidence now.',
+    'The deterministic brief is ready. The AI model is reviewing the verified evidence now.',
   fallback:
-    'The deterministic brief is shown. Phi was unavailable or its response did not pass evidence checks, so no AI assessment was generated.',
+    'The deterministic brief is shown. The model was unavailable or its response did not pass evidence checks, so no opinion was added.',
   disabled:
-    'Phi was disabled for this review. Only the deterministic brief was generated.',
+    'AI opinion was disabled for this review. Only the deterministic brief was generated.',
   rate_limited:
-    'The Phi review limit was reached. Only the deterministic brief was generated.',
+    'The AI review limit was reached. Only the deterministic brief was generated.',
 } as const
 
 export function WatchlistPanel({
@@ -61,10 +63,10 @@ export function WatchlistPanel({
     brief?.deterministicInsights.filter(
       (insight) => insight.severity === 'informational',
     ) ?? []
-  const assessmentsBySymbol = new Map(
-    brief?.aiAssessments.map((assessment) => [
-      assessment.symbol.toUpperCase(),
-      assessment,
+  const opinionsBySymbol = new Map(
+    brief?.stockOpinions.map((opinion) => [
+      opinion.symbol.toUpperCase(),
+      opinion,
     ]) ?? [],
   )
   const weeklyDue = isWeeklyReviewDue(watchlist)
@@ -134,7 +136,7 @@ export function WatchlistPanel({
               onChange={(event) => onEnablePhiChange(event.target.checked)}
               type="checkbox"
             />
-            <span>Use Azure Phi to connect verified watchlist signals</span>
+            <span>Add AI opinion to each watchlist review</span>
           </label>
           <section className="watchlist-brief" aria-label="Watchlist brief">
             {brief ? (
@@ -208,37 +210,51 @@ export function WatchlistPanel({
                 ) : null}
 
                 {brief.modelStatus === 'generated' &&
-                brief.prioritizedSignalIds.length > 0 ? (
+                (brief.prioritizedSignalIds.length > 0 ||
+                  brief.prioritizedEvidence.length > 0) ? (
                   <section className="verified-priorities">
-                    <span>Phi priority order</span>
-                    <strong>Prioritized verified signals</strong>
-                    <ol>
-                      {brief.prioritizedSignalIds.map((signalId) => {
-                        const signal = brief.deterministicInsights.find(
-                          (insight) => insight.id === signalId,
-                        )
-                        return signal ? (
-                          <li key={signal.id}>
-                            <strong>{signal.title}</strong>
-                            <span>{signal.summary}</span>
-                          </li>
-                        ) : null
-                      })}
-                    </ol>
+                    <span>What to review first</span>
+                    <strong>Most relevant verified evidence</strong>
+                    {brief.prioritizedSignalIds.length > 0 ? (
+                      <ol>
+                        {brief.prioritizedSignalIds.map((signalId) => {
+                          const signal = brief.deterministicInsights.find(
+                            (insight) => insight.id === signalId,
+                          )
+                          return signal ? (
+                            <li key={signal.id}>
+                              <strong>{signal.title}</strong>
+                              <span>{signal.summary}</span>
+                            </li>
+                          ) : null
+                        })}
+                      </ol>
+                    ) : null}
+                    <IntelligenceCitations
+                      citations={brief.prioritizedEvidence}
+                      label="Priority sources"
+                    />
                   </section>
                 ) : null}
 
-                {brief.modelStatus === 'generated' && brief.aiSummary ? (
-                  <section className="ai-review" aria-label="Phi evidence review">
-                    <div className="ai-summary">
-                      <span>Phi evidence review</span>
-                      <strong>Overall thesis-evidence summary</strong>
-                      <p>{brief.aiSummary}</p>
-                      <small>
-                        Evidence assessment only. This is not a trade
-                        recommendation.
-                      </small>
+                {brief.modelStatus === 'generated' &&
+                brief.modelOverallOpinion &&
+                brief.modelOverallSummary ? (
+                  <section
+                    className="model-opinion-summary"
+                    aria-label="Watchlist model opinion"
+                  >
+                    <div className="opinion-heading">
+                      <span>Model opinion</span>
+                      <strong>{brief.modelOverallOpinion}</strong>
                     </div>
+                    <p>{brief.modelOverallSummary.text}</p>
+                    <IntelligenceCitations
+                      citations={brief.modelOverallSummary.citations}
+                    />
+                    <small>
+                      Research context only. This is not a trade recommendation.
+                    </small>
                   </section>
                 ) : brief.modelStatus !== 'generated' ? (
                   <p
@@ -251,33 +267,18 @@ export function WatchlistPanel({
 
                 {brief.modelStatus === 'generated' &&
                 brief.crossStockPatterns.length > 0 ? (
-                  <section className="experimental-patterns">
+                  <section className="cross-stock-patterns">
                     <div>
                       <span>Cross-stock patterns</span>
                       <strong>Connections across verified evidence</strong>
                     </div>
                     {brief.crossStockPatterns.map((pattern, index) => {
                       const insightId = `experimental_pattern:watchlist:${index}`
-                      const evidence =
-                        brief.experimentalInsights[index]?.evidence ??
-                        pattern.evidenceIds.map((evidenceId) => ({
-                          label: evidenceId,
-                          current: 'Verified evidence',
-                          previous: null,
-                        }))
                       return (
                         <details key={`${pattern.title}:${index}`}>
                           <summary>{pattern.title}</summary>
-                          <p>{pattern.explanation}</p>
-                          <p>{pattern.thesisRelationship}</p>
-                          <ul>
-                            {evidence.map((item) => (
-                              <li key={item.label}>
-                                <strong>{item.label}</strong>
-                                <span>{item.current}</span>
-                              </li>
-                            ))}
-                          </ul>
+                          <p>{pattern.summary}</p>
+                          <IntelligenceCitations citations={pattern.citations} />
                           <small>Confidence: {pattern.confidence}</small>
                           <div className="insight-feedback">
                             <span>Was this useful?</span>
@@ -315,20 +316,6 @@ export function WatchlistPanel({
                       signal severity.
                     </p>
                   </section>
-                ) : null}
-
-                {brief.modelStatus === 'generated' &&
-                brief.aiUncertainties.length > 0 ? (
-                  <details className="brief-secondary">
-                    <summary>
-                      What Phi could not determine ({brief.aiUncertainties.length})
-                    </summary>
-                    <ul>
-                      {brief.aiUncertainties.map((uncertainty) => (
-                        <li key={uncertainty}>{uncertainty}</li>
-                      ))}
-                    </ul>
-                  </details>
                 ) : null}
 
                 {brief.stableSymbols.length > 0 ? (
@@ -370,56 +357,94 @@ export function WatchlistPanel({
                   <span>Saved</span>
                   <strong>{formatDate(item.addedAt)}</strong>
                 </div>
-                {assessmentsBySymbol.get(item.symbol.toUpperCase()) ? (
-                  <details className="watchlist-assessment">
+                {opinionsBySymbol.get(item.symbol.toUpperCase()) ? (
+                  <details className="watchlist-opinion">
                     <summary>
-                      <span>Phi evidence assessment</span>
+                      <span>Model opinion</span>
                       <strong>
                         {
-                          assessmentsBySymbol.get(item.symbol.toUpperCase())
-                            ?.score
-                        }
-                        /100 ·{' '}
-                        {
-                          assessmentsBySymbol.get(item.symbol.toUpperCase())
+                          opinionsBySymbol.get(item.symbol.toUpperCase())
                             ?.opinion
                         }
                       </strong>
                     </summary>
-                    <p>
-                      {
-                        assessmentsBySymbol.get(item.symbol.toUpperCase())
-                          ?.summary
-                      }
-                    </p>
                     <small>
                       Confidence:{' '}
                       {
-                        assessmentsBySymbol.get(item.symbol.toUpperCase())
+                        opinionsBySymbol.get(item.symbol.toUpperCase())
                           ?.confidence
                       }
-                      . Evidence assessment only.
+                      . Research context only.
                     </small>
-                    <div className="assessment-evidence">
+                    <div className="stock-opinion-change">
+                      <span>What changed</span>
+                      <p>
+                        {
+                          opinionsBySymbol.get(item.symbol.toUpperCase())
+                            ?.whatChanged.text
+                        }
+                      </p>
+                      <IntelligenceCitations
+                        citations={
+                          opinionsBySymbol.get(item.symbol.toUpperCase())
+                            ?.whatChanged.citations ?? []
+                        }
+                      />
+                    </div>
+                    <div className="stock-opinion-columns">
                       <div>
-                        <span>Key strengths</span>
-                        <ul>
-                          {assessmentsBySymbol
+                        <span>Why it fits</span>
+                        {opinionsBySymbol.get(item.symbol.toUpperCase())!
+                          .whyItFits.length > 0 ? (
+                          <ul>
+                            {opinionsBySymbol
                             .get(item.symbol.toUpperCase())
-                            ?.strengths.map((strength) => (
-                              <li key={strength.evidenceId}>{strength.text}</li>
+                             ?.whyItFits.map((claim) => (
+                             <li key={claim.citationIds.join(':')}>
+                               <p>{claim.text}</p>
+                               <IntelligenceCitations citations={claim.citations} />
+                             </li>
                             ))}
-                        </ul>
+                          </ul>
+                        ) : (
+                          <p>No verified supporting point was identified.</p>
+                        )}
                       </div>
                       <div>
-                        <span>Key risks</span>
-                        <ul>
-                          {assessmentsBySymbol
+                        <span>Concerns</span>
+                        {opinionsBySymbol.get(item.symbol.toUpperCase())!.concerns
+                          .length > 0 ? (
+                          <ul>
+                            {opinionsBySymbol
                             .get(item.symbol.toUpperCase())
-                            ?.risks.map((risk) => (
-                              <li key={risk.evidenceId}>{risk.text}</li>
+                             ?.concerns.map((claim) => (
+                             <li key={claim.citationIds.join(':')}>
+                               <p>{claim.text}</p>
+                               <IntelligenceCitations citations={claim.citations} />
+                             </li>
                             ))}
-                        </ul>
+                          </ul>
+                        ) : (
+                          <p>No verified concern was identified.</p>
+                        )}
+                      </div>
+                      <div>
+                        <span>What to watch next</span>
+                        {opinionsBySymbol.get(item.symbol.toUpperCase())!
+                          .whatToWatchNext.length > 0 ? (
+                          <ul>
+                            {opinionsBySymbol
+                             .get(item.symbol.toUpperCase())
+                             ?.whatToWatchNext.map((claim) => (
+                             <li key={claim.citationIds.join(':')}>
+                               <p>{claim.text}</p>
+                               <IntelligenceCitations citations={claim.citations} />
+                             </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p>No next research item was identified.</p>
+                        )}
                       </div>
                     </div>
                   </details>

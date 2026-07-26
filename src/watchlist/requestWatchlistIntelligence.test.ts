@@ -75,34 +75,60 @@ const watched = (enabled = true): Watchlist => {
   }
 }
 
+const claim = (text: string, evidenceId: string) => ({
+  text,
+  citationIds: [evidenceId],
+  citations: [
+    {
+      evidenceId,
+      symbol: 'TEST',
+      text: 'Verified TEST evidence.',
+    },
+  ],
+})
+
 const intelligenceResponse = {
+  overallOpinion: 'Mixed',
+  overallSummary: claim(
+    'Current business evidence remains consistent with the saved thesis.',
+    'stock-evidence:test:growth-quality',
+  ),
   prioritizedSignalIds: [],
-  prioritizedEvidenceIds: [],
-  summary: 'Current business evidence remains consistent with the saved thesis.',
-  assessments: [
+  prioritizedEvidenceIds: ['stock-evidence:test:growth-quality'],
+  prioritizedEvidence: [
+    {
+      evidenceId: 'stock-evidence:test:growth-quality',
+      symbol: 'TEST',
+      text: 'Verified TEST evidence.',
+    },
+  ],
+  stocks: [
     {
       symbol: 'TEST',
-      score: 76,
-      opinion: 'Promising but mixed',
-      summary: 'Business quality is supported, with valuation evidence still mixed.',
-      strengths: [
-        {
-          evidenceId: 'stock-evidence:test:growth-quality',
-          text: 'Growth and quality evidence is stable.',
-        },
+      opinion: 'Mixed',
+      whatChanged: claim(
+        'No material change',
+        'stock-evidence:test:context',
+      ),
+      whyItFits: [
+        claim(
+          'Growth and quality evidence is stable.',
+          'stock-evidence:test:growth-quality',
+        ),
       ],
-      risks: [
-        {
-          evidenceId: 'stock-evidence:test:valuation-balance',
-          text: 'Valuation and balance-sheet evidence is mixed.',
-        },
+      concerns: [
+        claim(
+          'Valuation and balance-sheet evidence is mixed.',
+          'stock-evidence:test:valuation-balance',
+        ),
+      ],
+      whatToWatchNext: [
+        claim('Review the next filing.', 'stock-evidence:test:context'),
       ],
       confidence: 'medium',
     },
   ],
-  experimentalPatterns: [],
   crossStockPatterns: [],
-  uncertainties: [],
 }
 
 afterEach(() => {
@@ -146,11 +172,13 @@ describe('requestWatchlistIntelligence', () => {
     expect(body.stocks[0].evidence.find((item) => item.id.endsWith(':context'))?.text)
       .toContain('no stock-specific change signal')
     expect(result.modelStatus).toBe('generated')
-    expect(result.aiAssessments[0]).toMatchObject({
+    expect(result.stockOpinions[0]).toMatchObject({
       symbol: 'TEST',
-      score: 76,
+      opinion: 'Mixed',
       confidence: 'medium',
     })
+    expect(result.stockOpinions[0].whatChanged.text).toBe('No material change')
+    expect(result.prioritizedEvidence).toHaveLength(1)
   })
 
   it('includes a non-empty free-text note automatically', () => {
@@ -195,9 +223,25 @@ describe('requestWatchlistIntelligence', () => {
   ] as const)('preserves the deterministic brief for HTTP %s', async (status, expected) => {
     const watchlist = watched()
     const brief = generateWatchlistBrief(watchlist)
+    const errorBody =
+      status === 429
+        ? {
+            error: 'Watchlist opinion limit reached.',
+            code: 'INTELLIGENCE_LIMIT_REACHED',
+            retryable: true,
+          }
+        : {
+            error: 'Intelligence is temporarily unavailable.',
+            code: 'INTELLIGENCE_UNAVAILABLE',
+            retryable: true,
+          }
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(new Response(null, { status })),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify(errorBody), { status }),
+        ),
     )
 
     const result = await requestWatchlistIntelligence(
@@ -208,7 +252,7 @@ describe('requestWatchlistIntelligence', () => {
 
     expect(result.modelStatus).toBe(expected)
     expect(result.deterministicInsights).toEqual(brief.deterministicInsights)
-    expect(result.aiAssessments).toEqual([])
+    expect(result.stockOpinions).toEqual([])
   })
 
   it('marks the deterministic brief while model work is pending', () => {
@@ -230,7 +274,7 @@ describe('requestWatchlistIntelligence', () => {
     const generated = {
       ...generateWatchlistBrief(current),
       modelStatus: 'generated' as const,
-      aiSummary: 'Older result',
+      modelOverallOpinion: 'Fits thesis' as const,
     }
 
     expect(
@@ -240,5 +284,32 @@ describe('requestWatchlistIntelligence', () => {
         generated,
       ),
     ).toBe(current)
+  })
+
+  it('falls back when a refusal or malformed response fails the strict schema', async () => {
+    const watchlist = watched()
+    const brief = generateWatchlistBrief(watchlist)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            ...intelligenceResponse,
+            score: 75,
+          }),
+          { status: 200 },
+        ),
+      ),
+    )
+
+    const result = await requestWatchlistIntelligence(
+      watchlist,
+      brief,
+      defaultThesis,
+    )
+
+    expect(result.modelStatus).toBe('fallback')
+    expect(result.deterministicInsights).toEqual(brief.deterministicInsights)
+    expect(result.modelOverallOpinion).toBeNull()
   })
 })

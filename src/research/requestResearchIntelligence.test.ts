@@ -45,12 +45,46 @@ const security: SecuritySnapshot = {
 }
 
 const response = {
-  score: 78,
-  opinion: 'Promising but mixed',
-  summary: 'The supplied evidence supports the thesis with notable constraints.',
-  strengths: [{ evidenceId: 'metric:earningsGrowth', text: 'Earnings grew.' }],
-  risks: [{ evidenceId: 'fit:valuation', text: 'Valuation is a constraint.' }],
+  opinion: 'Mixed',
+  headline: 'Quality evidence is constructive, with valuation still mixed.',
+  reasoningSummary: {
+    text: 'The supplied evidence supports the thesis with notable constraints.',
+    citationIds: ['metric:earningsGrowth'],
+    citations: [
+      {
+        evidenceId: 'metric:earningsGrowth',
+        symbol: 'IBM',
+        text: 'Earnings growth: 14.2%.',
+      },
+    ],
+  },
+  whyItFits: [
+    {
+      text: 'Earnings growth supports the thesis.',
+      citationIds: ['metric:earningsGrowth'],
+      citations: [
+        {
+          evidenceId: 'metric:earningsGrowth',
+          symbol: 'IBM',
+          text: 'Earnings growth: 14.2%.',
+        },
+      ],
+    },
+  ],
+  concerns: [],
+  whatToWatchNext: [],
   confidence: 'high',
+  uncertainty: {
+    text: 'Future operating results remain uncertain.',
+    citationIds: ['metric:earningsGrowth'],
+    citations: [
+      {
+        evidenceId: 'metric:earningsGrowth',
+        symbol: 'IBM',
+        text: 'Earnings growth: 14.2%.',
+      },
+    ],
+  },
 }
 
 describe('research intelligence client', () => {
@@ -139,7 +173,7 @@ describe('research intelligence client', () => {
     const results = await Promise.all([first, second])
     expect(results).toHaveLength(2)
     expect(fetchMock).toHaveBeenCalledOnce()
-    expect(results[1].score).toBe(78)
+    expect(results[1].opinion).toBe('Mixed')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/research-intelligence',
@@ -155,5 +189,69 @@ describe('research intelligence client', () => {
       researchIntelligenceCacheKey(request),
     )
 
+  })
+
+  it('discards score-bearing v1 cache entries', async () => {
+    window.localStorage.setItem(
+      'knowyourstocks.researchIntelligence.v1.IBM.legacy',
+      JSON.stringify({ response: { score: 91 } }),
+    )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(JSON.stringify(response))),
+    )
+    const request = createResearchIntelligenceRequest(
+      security,
+      scoreSecurity(security, defaultThesis),
+      defaultThesis,
+    )
+
+    await requestResearchIntelligence(request)
+
+    expect(
+      window.localStorage.getItem(
+        'knowyourstocks.researchIntelligence.v1.IBM.legacy',
+      ),
+    ).toBeNull()
+    expect(researchIntelligenceCacheKey(request)).toContain(
+      'researchIntelligence.v2',
+    )
+  })
+
+  it('parses safe API errors and rejects extra response fields', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              error: 'Limit reached.',
+              code: 'INTELLIGENCE_LIMIT_REACHED',
+              retryable: true,
+            }),
+            { status: 429 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(JSON.stringify({ ...response, score: 88 })),
+        ),
+    )
+    const first = createResearchIntelligenceRequest(
+      security,
+      scoreSecurity(security, defaultThesis),
+      defaultThesis,
+    )
+    const second = createResearchIntelligenceRequest(
+      security,
+      scoreSecurity(security, { ...defaultThesis, style: 'value' }),
+      { ...defaultThesis, style: 'value' },
+    )
+
+    await expect(requestResearchIntelligence(first)).rejects.toMatchObject({
+      code: 'INTELLIGENCE_LIMIT_REACHED',
+      retryable: true,
+    })
+    await expect(requestResearchIntelligence(second)).rejects.toThrow()
   })
 })

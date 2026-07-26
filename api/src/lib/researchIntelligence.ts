@@ -1,40 +1,45 @@
 import { z } from 'zod'
 import {
-  asRecord,
   assertNoInventedNumericClaims,
+  assertNoNumericNarrative,
   assertNoProhibitedAdvice,
   callGroundedModel,
   compactSnapshotSchema,
   confidenceSchema,
   createEvidenceCatalog,
   groundedEvidenceSchema,
-  normalizeConfidence,
-  normalizeOpinion,
-  normalizeScore,
+  mapCitations,
+  mappedCitationSchema,
   opinionSchema,
-  pick,
+  parseIntelligenceRequestBody,
   thesisSchema,
+  type GroundedEvidence,
+  type JsonSchema,
 } from './groundedIntelligence'
 
 export const researchIntelligenceRequestSchema = z
   .object({
     version: z.literal(1),
     symbol: z.string().min(1).max(16),
-    company: z.object({
-      name: z.string().min(1).max(160),
-      sector: z.string().max(120).nullable().optional(),
-      industry: z.string().max(120).nullable().optional(),
-      snapshot: compactSnapshotSchema.optional(),
-    }),
+    company: z
+      .object({
+        name: z.string().min(1).max(160),
+        sector: z.string().max(120).nullable().optional(),
+        industry: z.string().max(120).nullable().optional(),
+        snapshot: compactSnapshotSchema.optional(),
+      })
+      .strict(),
     thesis: thesisSchema,
     deterministicFit: z
       .object({
         total: z.number().min(0).max(100).nullable(),
         label: z.string().max(80),
       })
+      .strict()
       .optional(),
     evidence: z.array(groundedEvidenceSchema).min(1).max(24),
   })
+  .strict()
   .superRefine((request, context) => {
     const ids = request.evidence.map((item) => item.id.toLowerCase())
     if (new Set(ids).size !== ids.length) {
@@ -45,19 +50,46 @@ export const researchIntelligenceRequestSchema = z
     }
   })
 
-const mappedEvidenceSchema = z.object({
-  evidenceId: z.string(),
-  text: z.string(),
-})
+const modelClaimSchema = z
+  .object({
+    text: z.string().min(1).max(360).regex(/^[^0-9]*$/),
+    citationIds: z.array(z.string()).min(1).max(5),
+  })
+  .strict()
 
-export const researchIntelligenceResponseSchema = z.object({
-  score: z.number().int().min(0).max(100),
-  opinion: opinionSchema,
-  summary: z.string().min(1).max(300),
-  strengths: z.array(mappedEvidenceSchema).max(3),
-  risks: z.array(mappedEvidenceSchema).max(3),
-  confidence: confidenceSchema,
-})
+const researchModelSchema = z
+  .object({
+    opinion: opinionSchema,
+    headline: z.string().min(1).max(140).regex(/^[^0-9]*$/),
+    reasoningSummary: modelClaimSchema,
+    whyItFits: z.array(modelClaimSchema).max(4),
+    concerns: z.array(modelClaimSchema).max(4),
+    whatToWatchNext: z.array(modelClaimSchema).max(4),
+    confidence: confidenceSchema,
+    uncertainty: modelClaimSchema,
+  })
+  .strict()
+
+const citedClaimSchema = z
+  .object({
+    text: z.string(),
+    citationIds: z.array(z.string()),
+    citations: z.array(mappedCitationSchema),
+  })
+  .strict()
+
+export const researchIntelligenceResponseSchema = z
+  .object({
+    opinion: opinionSchema,
+    headline: z.string().min(1).max(140),
+    reasoningSummary: citedClaimSchema,
+    whyItFits: z.array(citedClaimSchema).max(4),
+    concerns: z.array(citedClaimSchema).max(4),
+    whatToWatchNext: z.array(citedClaimSchema).max(4),
+    confidence: confidenceSchema,
+    uncertainty: citedClaimSchema,
+  })
+  .strict()
 
 export type ResearchIntelligenceRequest = z.infer<
   typeof researchIntelligenceRequestSchema
@@ -68,106 +100,107 @@ export type ResearchIntelligenceResponse = z.infer<
 
 export const parseResearchIntelligenceRequest = (
   value: unknown,
-): ResearchIntelligenceRequest => researchIntelligenceRequestSchema.parse(value)
+): ResearchIntelligenceRequest =>
+  parseIntelligenceRequestBody(researchIntelligenceRequestSchema, value)
+
+const researchResponseJsonSchema = (evidenceIds: string[]): JsonSchema => ({
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'opinion',
+    'headline',
+    'reasoningSummary',
+    'whyItFits',
+    'concerns',
+    'whatToWatchNext',
+    'confidence',
+    'uncertainty',
+  ],
+  properties: {
+    opinion: { type: 'string', enum: opinionSchema.options },
+    headline: { type: 'string' },
+    reasoningSummary: { $ref: '#/$defs/claim' },
+    whyItFits: {
+      type: 'array',
+      maxItems: 5,
+      items: { $ref: '#/$defs/claim' },
+    },
+    concerns: {
+      type: 'array',
+      maxItems: 4,
+      items: { $ref: '#/$defs/claim' },
+    },
+    whatToWatchNext: {
+      type: 'array',
+      maxItems: 4,
+      items: { $ref: '#/$defs/claim' },
+    },
+    confidence: { type: 'string', enum: confidenceSchema.options },
+    uncertainty: { $ref: '#/$defs/claim' },
+  },
+  $defs: {
+    claim: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['text', 'citationIds'],
+      properties: {
+        text: { type: 'string' },
+        citationIds: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 4,
+          items: { type: 'string', enum: evidenceIds },
+        },
+      },
+    },
+  },
+})
+
+const evidenceForSymbol = (
+  evidence: GroundedEvidence[],
+  symbol: string,
+) => {
+  if (evidence.some((item) => item.symbol.toUpperCase() !== symbol.toUpperCase())) {
+    throw new Error('Model returned misattached evidence IDs.')
+  }
+  return evidence
+}
 
 const normalizeResearchOutput = (
   value: unknown,
   request: ResearchIntelligenceRequest,
 ): ResearchIntelligenceResponse => {
-  const record = asRecord(value)
+  const model = researchModelSchema.parse(value)
   const catalog = createEvidenceCatalog(request.evidence)
-  const score = normalizeScore(
-    pick(record, ['score', 'Score', 'thesisEvidenceScore', 'thesis_evidence_score']),
-  )
-  const opinion = normalizeOpinion(
-    pick(record, ['opinion', 'Opinion']),
-    score,
-  )
-  const rawSummary = pick(record, ['summary', 'Summary', 'assessment'])
-  let strengths = catalog.resolveIds(
-    pick(record, [
-      'strengthEvidenceIds',
-      'StrengthEvidenceIds',
-      'strength_evidence_ids',
-      'strengths',
-      'strength',
-    ]),
-    { max: 24 },
-  ).slice(0, 3)
-  let risks = catalog.resolveIds(
-    pick(record, [
-      'riskEvidenceIds',
-      'RiskEvidenceIds',
-      'risk_evidence_ids',
-      'risks',
-      'risk',
-    ]),
-    { max: 24 },
-  ).slice(0, 3)
-  const confidence = normalizeConfidence(
-    pick(record, ['confidence', 'Confidence']),
-  )
 
-  const symbol = request.symbol.toUpperCase()
-  if (
-    [...strengths, ...risks].some(
-      (item) => item.symbol.toUpperCase() !== symbol,
+  const mapClaim = (claim: z.infer<typeof modelClaimSchema>) => {
+    const evidence = evidenceForSymbol(
+      catalog.resolveIds(claim.citationIds, { min: 1, max: 5 }),
+      request.symbol,
     )
-  ) {
-    throw new Error('Model returned misattached evidence IDs.')
+    assertNoProhibitedAdvice([claim.text])
+    assertNoNumericNarrative([claim.text])
+    assertNoInventedNumericClaims(claim.text, evidence)
+    return {
+      text: claim.text,
+      citationIds: evidence.map((item) => item.id),
+      citations: mapCitations(evidence),
+    }
   }
 
-  const riskLanguage = /\b(weakens|mixed|unavailable|uncertainty|risk|extremely high)\b/i
-  const misplacedRisks = strengths.filter((item) =>
-    riskLanguage.test(item.text),
-  )
-  strengths = strengths.filter((item) => !riskLanguage.test(item.text))
-  risks = [...risks, ...misplacedRisks].filter(
-    (item, index, values) =>
-      values.findIndex((candidate) => candidate.id === item.id) === index,
-  )
-
-  if (strengths.length === 0) {
-    const fallback = request.evidence.find(
-      (item) => !riskLanguage.test(item.text),
-    )
-    if (fallback) strengths = [fallback]
-  }
-  if (risks.length === 0) {
-    const fallback = request.evidence.find((item) =>
-      riskLanguage.test(item.text),
-    )
-    if (fallback) risks = [fallback]
-  }
-  strengths = strengths.slice(0, 3)
-  risks = risks.slice(0, 3)
-
-  const summary =
-    typeof rawSummary === 'string' && rawSummary.trim()
-      ? rawSummary.trim()
-      : `${
-          strengths[0]?.text ??
-          'The available evidence provides limited support for the thesis.'
-        }${
-          risks[0]?.text ? ` Main concern: ${risks[0].text}` : ''
-        }`
-
-  assertNoProhibitedAdvice([summary])
-  assertNoInventedNumericClaims(summary, [...strengths, ...risks])
+  assertNoProhibitedAdvice([model.headline])
+  assertNoNumericNarrative([model.headline])
+  assertNoInventedNumericClaims(model.headline, request.evidence)
 
   return researchIntelligenceResponseSchema.parse({
-    score,
-    opinion,
-    summary: summary.slice(0, 300),
-    strengths: strengths.map((item) => ({
-      evidenceId: item.id,
-      text: item.text,
-    })),
-    risks: risks.map((item) => ({
-      evidenceId: item.id,
-      text: item.text,
-    })),
-    confidence,
+    opinion: model.opinion,
+    headline: model.headline,
+    reasoningSummary: mapClaim(model.reasoningSummary),
+    whyItFits: model.whyItFits.map(mapClaim),
+    concerns: model.concerns.map(mapClaim),
+    whatToWatchNext: model.whatToWatchNext.map(mapClaim),
+    confidence: model.confidence,
+    uncertainty: mapClaim(model.uncertainty),
   })
 }
 
@@ -180,19 +213,24 @@ export const generateResearchIntelligence = async (
     operation: 'research',
     request,
     clientId,
-    maxTokens: 240,
-    attemptTimeoutMs: 14_000,
-    regenerateInvalidOutput: true,
-    retryTransient: false,
+    maxTokens: 1_600,
+    attemptTimeoutMs: 20_000,
+    reasoningEffort: 'low',
+    responseSchema: {
+      name: 'research_opinion',
+      schema: researchResponseJsonSchema(
+        request.evidence.map((item) => item.id),
+      ),
+    },
     systemPrompt:
-      'Assess how strongly supplied evidence supports the supplied thesis. The score is not a return forecast. Use only supplied evidence aliases and supported opinion labels. Do not give trade instructions or add numeric claims to narratives.',
+      'Assess how the stock is doing and how the supplied evidence fits the user thesis. Opinions are research labels, never trade instructions. Use only supplied evidence IDs. Generated narrative text must contain no digits or numeric values. Do not invent facts, prices, targets, guarantees, or predictions.',
     userPrompt: `Symbol: ${request.symbol}
 Company: ${request.company.name}
 Classification: ${request.company.sector ?? 'unknown'} / ${request.company.industry ?? 'unknown'}
 Thesis: ${request.thesis.style}; ${request.thesis.horizon}; ${request.thesis.risk}; sectors ${request.thesis.sectors.join(', ')}
-${request.thesis.note ? `Optional thesis note: ${request.thesis.note}\n` : ''}${request.deterministicFit ? `Deterministic fit context: ${request.deterministicFit.total ?? 'unavailable'} (${request.deterministicFit.label})\n` : ''}Evidence:
+${request.thesis.note ? `Optional thesis note: ${request.thesis.note}\n` : ''}Evidence:
 ${catalog.lines.join('\n')}
-Return keys score, opinion, strengthEvidenceIds, riskEvidenceIds, confidence. Score must be 0-100. Opinion must be Compelling, Promising but mixed, Watch closely, or Reconsider. Select up to three strength IDs and up to three risk or missing-data IDs. Keep JSON compact; the server writes the user-facing summary.`,
+Return one opinion label (Fits thesis, Mixed, Weak fit, or Insufficient evidence), a short headline, a concise cited reasoningSummary, cited whyItFits points, cited concerns, cited whatToWatchNext points, confidence, and a cited uncertainty statement. Every claim object must cite one or more exact supplied evidence IDs shown in parentheses; do not return evidence aliases or any score.`,
     normalize: (value) => normalizeResearchOutput(value, request),
   })
 }

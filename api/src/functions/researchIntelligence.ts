@@ -4,7 +4,7 @@ import {
   type HttpResponseInit,
   type InvocationContext,
 } from '@azure/functions'
-import { intelligenceErrorStatus } from '../lib/groundedIntelligence'
+import { intelligenceErrorResponse } from '../lib/groundedIntelligence'
 import {
   generateResearchIntelligence,
   parseResearchIntelligenceRequest,
@@ -30,10 +30,7 @@ const handler = async (
     const message =
       error instanceof Error ? error.message : 'Research intelligence failed.'
     context.error(`Research intelligence failed: ${message}`)
-    return {
-      status: intelligenceErrorStatus(error),
-      jsonBody: { error: message },
-    }
+    return intelligenceErrorResponse(error)
   }
 }
 

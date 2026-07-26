@@ -6,77 +6,57 @@ import type {
   WatchlistBrief,
   WatchlistInsight,
   WatchlistItem,
-  WatchlistPattern,
 } from '../domain/watchlist'
+import {
+  citedClaimSchema,
+  citationSchema,
+  confidenceSchema,
+  IntelligenceApiError,
+  intelligenceErrorFromResponse,
+  opinionSchema,
+} from '../intelligence/contracts'
 
 const clientStorageKey = 'knowyourstocks.intelligenceClient'
-const prohibitedAdvice =
-  /\b(buy|sell|hold|short|purchase|exit|overweight|underweight|avoid|go\s+long|go\s+short|price\s+target|target\s+price|guarante(?:e|ed|es)|risk[-\s]?free|strong\s+buy|strong\s+sell)\b/i
 
-const mappedEvidenceSchema = z.object({
-  evidenceId: z.string(),
-  text: z.string(),
-})
+const stockOpinionSchema = z
+  .object({
+    symbol: z.string(),
+    opinion: opinionSchema,
+    whatChanged: citedClaimSchema,
+    whyItFits: z.array(citedClaimSchema).max(4),
+    concerns: z.array(citedClaimSchema).max(4),
+    whatToWatchNext: z.array(citedClaimSchema).max(4),
+    confidence: confidenceSchema,
+  })
+  .strict()
 
-const assessmentSchema = z.object({
-  symbol: z.string(),
-  score: z.number().int().min(0).max(100),
-  opinion: z.enum([
-    'Compelling',
-    'Promising but mixed',
-    'Watch closely',
-    'Reconsider',
-  ]),
-  summary: z.string(),
-  strengths: z.array(mappedEvidenceSchema).min(1).max(3),
-  risks: z.array(mappedEvidenceSchema).min(1).max(3),
-  confidence: z.enum(['low', 'medium', 'high']),
-})
-
-const patternSchema = z.object({
-  title: z.string(),
-  explanation: z.string(),
-  evidenceIds: z.array(z.string()).min(2),
-  confidence: z.enum(['low', 'medium', 'high']),
-  thesisRelationship: z.string(),
-})
+const patternSchema = z
+  .object({
+    title: z.string().min(1).max(140),
+    summary: z.string().min(1).max(360),
+    citationIds: z.array(z.string()).min(2).max(8),
+    citations: z.array(citationSchema).min(2).max(8),
+    confidence: confidenceSchema,
+  })
+  .strict()
 
 const responseSchema = z
   .object({
-    prioritizedSignalIds: z.array(z.string()),
-    prioritizedEvidenceIds: z.array(z.string()),
-    summary: z.string(),
-    assessments: z.array(assessmentSchema),
-    experimentalPatterns: z.array(patternSchema),
-    crossStockPatterns: z.array(patternSchema),
-    uncertainties: z.array(z.string()),
+    overallOpinion: opinionSchema,
+    overallSummary: citedClaimSchema,
+    prioritizedSignalIds: z.array(z.string()).max(75),
+    prioritizedEvidenceIds: z.array(z.string()).max(75),
+    prioritizedEvidence: z.array(citationSchema).max(75),
+    stocks: z.array(stockOpinionSchema).max(25),
+    crossStockPatterns: z.array(patternSchema).max(3),
   })
-  .superRefine((response, context) => {
-    const narratives = [
-      response.summary,
-      ...response.assessments.map((assessment) => assessment.summary),
-      ...response.crossStockPatterns.flatMap((pattern) => [
-        pattern.title,
-        pattern.explanation,
-        pattern.thesisRelationship,
-      ]),
-      ...response.uncertainties,
-    ]
-    if (narratives.some((narrative) => prohibitedAdvice.test(narrative))) {
-      context.addIssue({
-        code: 'custom',
-        message: 'The model response included direct trade language.',
-      })
-    }
-  })
+  .strict()
 
 type PacketEvidence = {
   id: string
   symbol: string
   text: string
 }
-
-class RateLimitError extends Error {}
 
 const getClientId = () => {
   const existing = window.localStorage.getItem(clientStorageKey)
@@ -356,10 +336,11 @@ export const prepareWatchlistIntelligenceBrief = (
   experimentalInsights: [],
   prioritizedSignalIds: [],
   prioritizedEvidenceIds: [],
-  aiSummary: null,
-  aiAssessments: [],
+  prioritizedEvidence: [],
+  modelOverallOpinion: null,
+  modelOverallSummary: null,
+  stockOpinions: [],
   crossStockPatterns: [],
-  aiUncertainties: [],
   modelStatus: enabled ? 'loading' : 'disabled',
 })
 
@@ -373,26 +354,6 @@ export const applyWatchlistIntelligenceResult = (
     ? { ...current, latestBrief: intelligenceBrief }
     : current
 
-const patternToInsight = (
-  pattern: WatchlistPattern,
-  generatedAt: string,
-  index: number,
-  evidenceById: Map<string, PacketEvidence>,
-): WatchlistInsight => ({
-  id: `experimental_pattern:watchlist:${index}`,
-  symbol: null,
-  type: 'experimental_pattern',
-  severity: 'informational',
-  title: pattern.title,
-  summary: `${pattern.explanation} ${pattern.thesisRelationship}`,
-  evidence: pattern.evidenceIds.map((evidenceId) => ({
-    label: evidenceId,
-    current: evidenceById.get(evidenceId)?.text ?? 'Verified evidence',
-    previous: null,
-  })),
-  generatedAt,
-})
-
 const unavailableBrief = (
   brief: WatchlistBrief,
   status: 'fallback' | 'rate_limited',
@@ -401,10 +362,11 @@ const unavailableBrief = (
   experimentalInsights: [],
   prioritizedSignalIds: [],
   prioritizedEvidenceIds: [],
-  aiSummary: null,
-  aiAssessments: [],
+  prioritizedEvidence: [],
+  modelOverallOpinion: null,
+  modelOverallSummary: null,
+  stockOpinions: [],
   crossStockPatterns: [],
-  aiUncertainties: [],
   modelStatus: status,
 })
 
@@ -433,11 +395,8 @@ export const requestWatchlistIntelligence = async (
       body: JSON.stringify(requestPacket),
     })
 
-    if (response.status === 429) {
-      throw new RateLimitError('Watchlist intelligence is rate limited.')
-    }
     if (!response.ok) {
-      throw new Error(`Intelligence endpoint returned HTTP ${response.status}.`)
+      throw await intelligenceErrorFromResponse(response)
     }
 
     const intelligence = responseSchema.parse(await response.json())
@@ -451,47 +410,26 @@ export const requestWatchlistIntelligence = async (
     const remaining = brief.deterministicInsights.filter(
       (insight) => !prioritizedIds.has(insight.id),
     )
-    const evidenceById = new Map(
-      requestPacket.stocks.flatMap((stock) =>
-        stock.evidence.map((evidence) => [evidence.id, evidence] as const),
-      ),
-    )
-    requestPacket.deterministicSignals.forEach((signal) => {
-      evidenceById.set(signal.id, {
-        id: signal.id,
-        symbol: signal.symbol ?? 'watchlist',
-        text: compactText(
-          `${signal.title}. ${signal.summary}. ${signal.evidence
-            .map(
-              (item) =>
-                `${item.label}: ${item.current}${
-                  item.previous ? `; previously ${item.previous}` : ''
-                }`,
-            )
-            .join('. ')}`,
-        ),
-      })
-    })
-
     return {
       ...brief,
       deterministicInsights: [...prioritized, ...remaining],
-      experimentalInsights: intelligence.experimentalPatterns.map(
-        (pattern, index) =>
-          patternToInsight(pattern, brief.generatedAt, index, evidenceById),
-      ),
+      experimentalInsights: [],
       prioritizedSignalIds: intelligence.prioritizedSignalIds,
       prioritizedEvidenceIds: intelligence.prioritizedEvidenceIds,
-      aiSummary: intelligence.summary,
-      aiAssessments: intelligence.assessments,
+      prioritizedEvidence: intelligence.prioritizedEvidence,
+      modelOverallOpinion: intelligence.overallOpinion,
+      modelOverallSummary: intelligence.overallSummary,
+      stockOpinions: intelligence.stocks,
       crossStockPatterns: intelligence.crossStockPatterns,
-      aiUncertainties: intelligence.uncertainties,
       modelStatus: 'generated',
     }
   } catch (error) {
     return unavailableBrief(
       brief,
-      error instanceof RateLimitError ? 'rate_limited' : 'fallback',
+      error instanceof IntelligenceApiError &&
+        error.code === 'INTELLIGENCE_LIMIT_REACHED'
+        ? 'rate_limited'
+        : 'fallback',
     )
   }
 }

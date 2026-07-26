@@ -126,9 +126,19 @@ describe('watchlistStorage', () => {
           experimentalInsights: [],
           stableSymbols: ['T1'],
           errors: [],
-          aiSummary: null,
-          aiUncertainties: [],
-          modelStatus: 'not_requested',
+          aiSummary: 'Legacy score-bearing summary.',
+          aiAssessments: [
+            {
+              symbol: 'T1',
+              score: 88,
+              opinion: 'Compelling',
+              summary: 'Legacy assessment.',
+              strengths: [],
+              risks: [],
+              confidence: 'high',
+            },
+          ],
+          modelStatus: 'generated',
         },
         modelPreferences: {
           includeThesisNote: false,
@@ -139,7 +149,7 @@ describe('watchlistStorage', () => {
     const result = loadWatchlist()
 
     expect(result.recoveryRequired).toBe(false)
-    expect(result.watchlist.version).toBe(2)
+    expect(result.watchlist.version).toBe(3)
     expect(result.watchlist.modelPreferences.enablePhi).toBe(true)
     expect(result.watchlist.items[0].currentSnapshot).toMatchObject({
       operatingMargin: null,
@@ -152,15 +162,25 @@ describe('watchlistStorage', () => {
     expect(result.watchlist.latestBrief).toMatchObject({
       prioritizedSignalIds: [],
       prioritizedEvidenceIds: [],
-      aiAssessments: [],
+      prioritizedEvidence: [],
+      modelOverallOpinion: null,
+      modelOverallSummary: null,
+      stockOpinions: [],
       crossStockPatterns: [],
+      modelStatus: 'not_requested',
     })
     expect(result.watchlist.insightFeedback).toEqual({})
     expect(
       JSON.parse(
         window.localStorage.getItem('knowyourstocks.watchlist') ?? '{}',
       ).version,
-    ).toBe(2)
+    ).toBe(3)
+    expect(
+      window.localStorage.getItem('knowyourstocks.watchlist'),
+    ).not.toContain('aiAssessments')
+    expect(
+      window.localStorage.getItem('knowyourstocks.watchlist'),
+    ).not.toContain('"score":88')
   })
 
   it('still rejects malformed stored watchlists after migration', () => {
