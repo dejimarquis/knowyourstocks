@@ -65,7 +65,7 @@ The prompt requests only concise reasoning summaries and explicitly forbids hidd
 
 ## Retry, cache, and fallback
 
-Validated responses are cached in process for six hours by deployment, operation, schema, and request hash. One retry is allowed for a transient timeout, HTTP 429, or server error. Each attempt is capped at 20 seconds so GPT-5-mini can complete its strict structured response; deterministic output remains visible while intelligence is pending or unavailable.
+Validated responses are cached in process for six hours by deployment, operation, schema, and request hash. One retry is allowed for a transient timeout, HTTP 429, or server error. Each attempt is capped at 30 seconds so production-shaped model responses can complete through the managed API; deterministic output remains visible while intelligence is pending or unavailable.
 
 Malformed JSON, refusal, content filtering, schema failure, grounding failure, rate limiting, timeout, or server failure maps to a truthful unavailable state while deterministic Research, Discover, or Watchlist output remains usable.
 

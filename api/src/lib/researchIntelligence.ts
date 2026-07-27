@@ -217,7 +217,7 @@ export const generateResearchIntelligence = async (
     request,
     clientId,
     maxTokens: 1_200,
-    attemptTimeoutMs: 20_000,
+    attemptTimeoutMs: 30_000,
     reasoningEffort: 'low',
     responseSchema: {
       name: 'research_opinion',

@@ -58,7 +58,7 @@ export const prohibitedAdvice =
 
 const cacheLifetimeMs = 6 * 60 * 60 * 1000
 const dailyWindowMs = 24 * 60 * 60 * 1000
-const maximumAttemptTimeoutMs = 20_000
+const maximumAttemptTimeoutMs = 30_000
 const responseCache = new Map<string, { expiresAt: number; value: unknown }>()
 let globalWindowStartedAt = Date.now()
 let globalCalls = 0

@@ -468,7 +468,7 @@ export const generateWatchlistIntelligence = async (
     request,
     clientId,
     maxTokens: Math.max(1_400, Math.min(3_000, 350 + symbols.length * 110)),
-    attemptTimeoutMs: 20_000,
+    attemptTimeoutMs: 30_000,
     reasoningEffort: 'low',
     responseSchema: {
       name: 'watchlist_opinions',

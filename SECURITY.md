@@ -68,7 +68,7 @@ Operation-specific deployments are also server settings:
 - `FOUNDRY_RECOMMENDATION_DEPLOYMENT=gpt-5-mini-intelligence`
 - `FOUNDRY_WATCHLIST_DEPLOYMENT=gpt-oss-120b-intelligence`
 
-Operation-specific settings take precedence. The legacy `FOUNDRY_DEPLOYMENT` fallback may remain only through rollback verification and must then be removed.
+Operation-specific settings take precedence. Model attempts are capped at 30 seconds and preserve deterministic fallback on failure.
 
 A random intelligence client identifier in browser `localStorage` supports process-local per-browser limits. It is not an account identifier and is not derived from an IP address. Process-local global and browser windows can reset during cold start or scale-out, so they reduce bursts but do not provide a durable spend ceiling.
 
