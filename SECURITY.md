@@ -38,7 +38,7 @@ The application does not intentionally persist raw prompts or packets server-sid
 
 Every returned citation is resolved server-side to evidence included in the request. The browser receives the mapped evidence ID, symbol, and supplied evidence text; it does not receive a free-form external citation invented by the model.
 
-The API parses only visible `message.content`. Provider `reasoning_content`, hidden chain-of-thought, and similar internal reasoning fields are ignored and are never stored or displayed. The product shows only concise cited reasoning summaries.
+The API extracts only the first complete JSON object from visible `message.content` and discards trailing model text before validation. Provider `reasoning_content`, hidden chain-of-thought, and similar internal reasoning fields are ignored and are never stored or displayed. The product shows only concise cited reasoning summaries.
 
 ## Untrusted-model controls
 

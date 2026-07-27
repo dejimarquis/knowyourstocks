@@ -9,6 +9,7 @@ import {
   intelligenceErrorResponse,
   intelligenceErrorStatus,
   parseIntelligenceRequestBody,
+  parseModelJson,
   resetGroundedIntelligenceStateForTests,
 } from './groundedIntelligence'
 
@@ -42,6 +43,25 @@ const options = (
 })
 
 describe('grounded intelligence client', () => {
+  it('extracts one complete JSON object and ignores trailing model text', () => {
+    expect(
+      parseModelJson(
+        '{"result":{"text":"Grounded {opinion}."}} trailing reasoning {"ignored":true}',
+      ),
+    ).toEqual({ result: { text: 'Grounded {opinion}.' } })
+    expect(
+      parseModelJson('prefix {not json} then {"result":"ok"}'),
+    ).toEqual({ result: 'ok' })
+    expect(
+      parseModelJson('prefix "{" then {"result":"ok"}'),
+    ).toEqual({ result: 'ok' })
+    expect(
+      parseModelJson(
+        '{"text":"claim"} then {"overallOpinion":"Mixed","stocks":[]}',
+      ),
+    ).toEqual({ overallOpinion: 'Mixed', stocks: [] })
+  })
+
   beforeEach(() => {
     resetGroundedIntelligenceStateForTests()
     process.env.FOUNDRY_OPENAI_ENDPOINT = 'https://example.openai.azure.com'

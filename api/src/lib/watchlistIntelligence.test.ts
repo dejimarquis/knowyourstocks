@@ -143,6 +143,8 @@ describe('generateWatchlistIntelligence', () => {
       'MSFT',
       'GOOGL',
     ])
+    expect(schema.properties.stocks.minItems).toBe(2)
+    expect(schema.properties.stocks.maxItems).toBe(2)
     expect(schema.$defs.claim.properties.citationIds.items.enum).not.toContain(
       'invented-id',
     )

@@ -215,7 +215,8 @@ const watchlistResponseJsonSchema = (
     },
     stocks: {
       type: 'array',
-      maxItems: 25,
+      minItems: symbols.length,
+      maxItems: symbols.length,
       items: {
         type: 'object',
         additionalProperties: false,

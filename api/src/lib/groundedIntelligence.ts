@@ -179,18 +179,50 @@ export const parseModelJson = (content: string): unknown => {
   const unfenced = trimmed
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/, '')
-  const start = unfenced.indexOf('{')
-  const end = unfenced.lastIndexOf('}')
+  const candidates: Array<{ length: number; value: unknown }> = []
+  for (let start = 0; start < unfenced.length; start += 1) {
+    if (unfenced[start] !== '{') continue
 
-  if (start < 0 || end < start) {
-    throw new Error('Foundry returned invalid JSON output.')
+    let depth = 0
+    let inString = false
+    let escaped = false
+    for (let index = start; index < unfenced.length; index += 1) {
+      const character = unfenced[index]
+      if (inString) {
+        if (escaped) {
+          escaped = false
+        } else if (character === '\\') {
+          escaped = true
+        } else if (character === '"') {
+          inString = false
+        }
+        continue
+      }
+      if (character === '"') {
+        inString = true
+      } else if (character === '{') {
+        depth += 1
+      } else if (character === '}') {
+        depth -= 1
+        if (depth === 0) {
+          try {
+            candidates.push({
+              length: index + 1 - start,
+              value: JSON.parse(unfenced.slice(start, index + 1)),
+            })
+          } catch {
+            // Continue looking for a later complete object.
+          }
+          break
+        }
+      }
+    }
   }
 
-  try {
-    return JSON.parse(unfenced.slice(start, end + 1))
-  } catch {
-    throw new Error('Foundry returned invalid JSON output.')
-  }
+  const largest = candidates.sort((left, right) => right.length - left.length)[0]
+  if (largest) return largest.value
+
+  throw new Error('Foundry returned invalid JSON output.')
 }
 
 export const assertNoProhibitedAdvice = (narratives: string[]) => {

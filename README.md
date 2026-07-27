@@ -21,7 +21,7 @@ There is no AI numeric score. Opinion intelligence does not predict returns, alt
 
 ## Grounding and model routing
 
-Every operation uses strict JSON Schema whose citation and symbol enums are built from that request. The server then validates grounding, symbol attachment, numeric narrative, and prohibited advice. Invalid optional Watchlist patterns may be dropped without discarding an otherwise valid review. Transient failures receive one bounded retry; validated responses are cached for six hours; all failure paths preserve deterministic output.
+Every operation uses strict JSON Schema whose citation and symbol enums are built from that request. The server extracts only the first complete JSON object, discards trailing model text, then validates grounding, symbol attachment, numeric narrative, and prohibited advice. Invalid optional Watchlist patterns may be dropped without discarding an otherwise valid review. Transient failures receive one bounded retry; validated responses are cached for six hours; all failure paths preserve deterministic output.
 
 Selected routing:
 

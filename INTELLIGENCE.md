@@ -58,6 +58,7 @@ The server then applies independent validation:
 - reject generated digits and quantitative magnitude words in narrative text;
 - reject invented numeric claims, direct advice, guarantees, and price targets;
 - validate cross-stock distinct-symbol grounding;
+- extract only the first complete JSON object and discard trailing model text;
 - ignore provider `reasoning_content` and parse only visible `message.content`.
 
 The prompt requests only concise reasoning summaries and explicitly forbids hidden chain-of-thought.
