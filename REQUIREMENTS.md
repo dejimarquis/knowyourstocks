@@ -93,7 +93,7 @@ The global attempt cap is 12 seconds; current operation calls use 11 seconds. Pr
 - GPT-5-mini for Research and Discover.
 - gpt-oss-120b for Watchlist.
 
-GPT-5-mini delivered the strongest nuanced Research and Discover quality. The final concurrent run generated 24/24 Research and 20/20 Discover responses with strict grounding. Estimated cost was about $0.0021 and $0.0019 per call.
+GPT-5-mini delivered the strongest nuanced Research and Discover quality. The final concurrent run generated 24/24 Research and 20/20 Discover responses with strict grounding. Estimated cost was about $0.0018 and $0.0020 per call.
 
 ### Rejected or rollback choices
 
@@ -107,8 +107,8 @@ Phi is not selected: both Phi-4-mini variants rejected the strict JSON Schema re
 
 The production-derived dataset covers PLTR, CRWV, MSFT, Bloom Energy, Discover, and stable/changing Watchlist cases.
 
-- GPT-5-mini Research: 23/24 first-attempt generated, quality 4.792, p95 11.316s, about $0.001928/call.
-- GPT-5-mini Discover: 20/20, quality 4.750, p95 8.382s, about $0.001908/call.
+- GPT-5-mini Research: 24/24, quality 4.958, p95 15.031s under concurrency, about $0.001794/call.
+- GPT-5-mini Discover: 20/20, quality 4.875, p95 18.046s under concurrency, about $0.002013/call.
 - GPT-5-mini Watchlist: multi-stock reliability failed the concurrent release gate even after increasing capacity and allowing a 20-second attempt.
 - gpt-oss-120b Watchlist: 20/20, quality 4.725, p95 11.732s, about $0.000487/call with the final concise strict schema.
 

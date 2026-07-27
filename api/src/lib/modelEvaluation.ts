@@ -25,9 +25,9 @@ const researchSchema = z
     opinion: opinionSchema,
     headline: z.string().min(1).max(140),
     reasoningSummary: claimSchema,
-    whyItFits: z.array(claimSchema).min(1).max(4),
-    concerns: z.array(claimSchema).min(1).max(4),
-    whatToWatchNext: z.array(claimSchema).min(1).max(4),
+    whyItFits: z.array(claimSchema).min(1).max(2),
+    concerns: z.array(claimSchema).min(1).max(2),
+    whatToWatchNext: z.array(claimSchema).min(1).max(2),
     confidence: confidenceSchema,
     uncertainty: claimSchema,
   })
@@ -169,19 +169,19 @@ export const jsonSchemaForFixture = (
         whyItFits: {
           type: 'array',
           minItems: 1,
-          maxItems: 4,
+          maxItems: 2,
           items: { $ref: '#/$defs/claim' },
         },
         concerns: {
           type: 'array',
           minItems: 1,
-          maxItems: 4,
+          maxItems: 2,
           items: { $ref: '#/$defs/claim' },
         },
         whatToWatchNext: {
           type: 'array',
           minItems: 1,
-          maxItems: 4,
+          maxItems: 2,
           items: { $ref: '#/$defs/claim' },
         },
         confidence: { type: 'string', enum: confidenceSchema.options },
@@ -315,7 +315,7 @@ Use only supplied evidence IDs. Every factual narrative must be concise and cite
 
   if (fixture.operation === 'research') {
     return `${common}
-Assess ${fixture.symbol}. Return opinion, headline, reasoningSummary, whyItFits, concerns, whatToWatchNext, confidence, and uncertainty. Treat the headline as a non-numeric label; every other narrative must be in a claim object with citations.`
+Assess ${fixture.symbol}. Return opinion, headline, reasoningSummary, one or two whyItFits claims, one or two concerns, one or two whatToWatchNext claims, confidence, and uncertainty. Treat the headline as a non-numeric label; every other narrative must be in a claim object with citations.`
   }
   if (fixture.operation === 'recommendations') {
     return `${common}
@@ -833,7 +833,7 @@ const evaluateOne = async (
           ],
           max_completion_tokens:
             fixture.operation === 'research'
-              ? 1_600
+              ? 1_200
               : fixture.operation === 'recommendations'
                 ? 2_200
                 : 1_400,

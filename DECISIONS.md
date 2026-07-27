@@ -34,7 +34,7 @@ The selected production-aligned routing is:
 - Discover: `gpt-5-mini-intelligence`;
 - Watchlist: `gpt-oss-120b-intelligence`.
 
-GPT-5-mini is the quality-first target for Research and Discover. The final concurrent run generated 24/24 Research and 20/20 Discover responses with strict grounding. Observed use was about $0.0021 and $0.0019 per call.
+GPT-5-mini is the quality-first target for Research and Discover. The final concurrent run generated 24/24 Research and 20/20 Discover responses with strict grounding. Observed use was about $0.0018 and $0.0020 per call.
 
 The original broad Watchlist response was unreliable on both models: GPT-5-mini timed out and gpt-oss could exhaust output. The final contract bounds every stock to one concise fit, concern, and watch item. Under that production-shaped strict schema, gpt-oss generated 20/20 grounded responses, scored 4.725, reached 11.732-second p95, and cost about $0.000487 per call. It is the Watchlist target.
 
@@ -44,8 +44,8 @@ GPT-4.1-mini would have offered a familiar non-reasoning baseline, but Azure rej
 
 The frozen cases use captured PLTR, CRWV, MSFT, Bloom Energy, Discover, and stable/changing Watchlist packets.
 
-- GPT-5-mini Research: quality 4.792; 23/24 first-attempt responses generated; p95 11.316s; about $0.001928 per call.
-- GPT-5-mini Discover: 20/20 generated; quality 4.750; p95 8.382s; about $0.001908 per call.
+- GPT-5-mini Research: 24/24 generated; quality 4.958; p95 15.031s under concurrency; about $0.001794 per call.
+- GPT-5-mini Discover: 20/20 generated; quality 4.875; p95 18.046s under concurrency; about $0.002013 per call.
 - GPT-5-mini Watchlist: failed the concurrent multi-stock release gate despite increased capacity and a 20-second attempt.
 - gpt-oss-120b Watchlist: 20/20 generated; quality 4.725; p95 11.732s; about $0.000487 per call with the concise strict contract.
 

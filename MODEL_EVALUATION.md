@@ -19,7 +19,7 @@ Discover, and stable/changing Watchlist packets.
 
 | Operation | Samples | Quality | First-attempt generated | p50 | p95 | Max | Estimated cost/call |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Research / GPT-5-mini | 24 | 4.958 | 24/24 | 14.318s | 16.645s | 16.704s | $0.002026 |
+| Research / GPT-5-mini | 24 | 4.958 | 24/24 | 12.859s | 15.031s | 15.421s | $0.001794 |
 | Discover / GPT-5-mini | 20 | 4.875 | 20/20 | 13.887s | 18.046s | 18.109s | $0.002013 |
 | Watchlist / gpt-oss-120b | 20 | 4.725 | 20/20 | 8.551s | 11.732s | 13.041s | $0.000487 |
 
@@ -29,7 +29,7 @@ occurred.
 
 Average token use:
 
-- Research: 756 prompt, 681 visible output, 237 reasoning, 1,674 total.
+- Research: 767 prompt, 518 visible output, 283 reasoning, 1,568 total.
 - Discover: 674 prompt, 660 visible output, 262 reasoning, 1,596 total.
 - Watchlist: 470 prompt, 694 visible output, no reported reasoning, 1,164 total.
 

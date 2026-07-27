@@ -62,9 +62,9 @@ const researchModelSchema = z
     opinion: opinionSchema,
     headline: z.string().min(1).max(140).regex(/^[^0-9]*$/),
     reasoningSummary: modelClaimSchema,
-    whyItFits: z.array(modelClaimSchema).max(4),
-    concerns: z.array(modelClaimSchema).max(4),
-    whatToWatchNext: z.array(modelClaimSchema).max(4),
+    whyItFits: z.array(modelClaimSchema).min(1).max(2),
+    concerns: z.array(modelClaimSchema).min(1).max(2),
+    whatToWatchNext: z.array(modelClaimSchema).min(1).max(2),
     confidence: confidenceSchema,
     uncertainty: modelClaimSchema,
   })
@@ -83,9 +83,9 @@ export const researchIntelligenceResponseSchema = z
     opinion: opinionSchema,
     headline: z.string().min(1).max(140),
     reasoningSummary: citedClaimSchema,
-    whyItFits: z.array(citedClaimSchema).max(4),
-    concerns: z.array(citedClaimSchema).max(4),
-    whatToWatchNext: z.array(citedClaimSchema).max(4),
+    whyItFits: z.array(citedClaimSchema).min(1).max(2),
+    concerns: z.array(citedClaimSchema).min(1).max(2),
+    whatToWatchNext: z.array(citedClaimSchema).min(1).max(2),
     confidence: confidenceSchema,
     uncertainty: citedClaimSchema,
   })
@@ -122,17 +122,20 @@ const researchResponseJsonSchema = (evidenceIds: string[]): JsonSchema => ({
     reasoningSummary: { $ref: '#/$defs/claim' },
     whyItFits: {
       type: 'array',
-      maxItems: 5,
+      minItems: 1,
+      maxItems: 2,
       items: { $ref: '#/$defs/claim' },
     },
     concerns: {
       type: 'array',
-      maxItems: 4,
+      minItems: 1,
+      maxItems: 2,
       items: { $ref: '#/$defs/claim' },
     },
     whatToWatchNext: {
       type: 'array',
-      maxItems: 4,
+      minItems: 1,
+      maxItems: 2,
       items: { $ref: '#/$defs/claim' },
     },
     confidence: { type: 'string', enum: confidenceSchema.options },
@@ -148,7 +151,7 @@ const researchResponseJsonSchema = (evidenceIds: string[]): JsonSchema => ({
         citationIds: {
           type: 'array',
           minItems: 1,
-          maxItems: 4,
+          maxItems: 5,
           items: { type: 'string', enum: evidenceIds },
         },
       },
@@ -213,7 +216,7 @@ export const generateResearchIntelligence = async (
     operation: 'research',
     request,
     clientId,
-    maxTokens: 1_600,
+    maxTokens: 1_200,
     attemptTimeoutMs: 20_000,
     reasoningEffort: 'low',
     responseSchema: {
@@ -230,7 +233,7 @@ Classification: ${request.company.sector ?? 'unknown'} / ${request.company.indus
 Thesis: ${request.thesis.style}; ${request.thesis.horizon}; ${request.thesis.risk}; sectors ${request.thesis.sectors.join(', ')}
 ${request.thesis.note ? `Optional thesis note: ${request.thesis.note}\n` : ''}Evidence:
 ${catalog.lines.join('\n')}
-Return one opinion label (Fits thesis, Mixed, Weak fit, or Insufficient evidence), a short headline, a concise cited reasoningSummary, cited whyItFits points, cited concerns, cited whatToWatchNext points, confidence, and a cited uncertainty statement. Every claim object must cite one or more exact supplied evidence IDs shown in parentheses; do not return evidence aliases or any score.`,
+Return one opinion label (Fits thesis, Mixed, Weak fit, or Insufficient evidence), a short headline, a concise cited reasoningSummary, one or two concise cited whyItFits points, one or two concise cited concerns, one or two concise cited whatToWatchNext points, confidence, and a cited uncertainty statement. Every claim object must cite one or more exact supplied evidence IDs shown in parentheses; do not return evidence aliases or any score.`,
     normalize: (value) => normalizeResearchOutput(value, request),
   })
 }

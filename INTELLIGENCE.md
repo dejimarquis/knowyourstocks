@@ -79,7 +79,7 @@ Process-local global and browser windows reduce bursts but are not durable billi
 | Discover | `gpt-5-mini-intelligence` | 20/20 grounded candidate rankings with the strongest quality for thesis-aware comparison |
 | Watchlist | `gpt-oss-120b-intelligence` | 20/20 grounded concise multi-stock reviews with materially lower latency and cost |
 
-GPT-5-mini is the production target for Research and Discover. The final concurrent evaluation generated 24/24 Research and 20/20 Discover responses. Estimated use was about $0.0021 and $0.0019 per call.
+GPT-5-mini is the production target for Research and Discover. The final concurrent evaluation generated 24/24 Research and 20/20 Discover responses. Estimated use was about $0.0018 and $0.0020 per call.
 
 The initial broad Watchlist response could exhaust output on gpt-oss and time out on GPT-5-mini. The final contract requires exactly one concise fit, concern, and watch item per stock. With that production-shaped strict schema, gpt-oss generated 20/20 grounded reviews, scored 4.725, reached an 11.732-second p95, and cost about $0.000487 per call. GPT-4.1-mini was rejected because Azure reported the requested version as deprecating in April 2027. Both Phi-4-mini variants rejected strict JSON Schema and were unreliable in JSON mode. After live verification retain GPT-5-mini and gpt-oss; remove all Phi deployments and the legacy fallback setting.
 
@@ -89,7 +89,7 @@ Frozen production-derived fixtures cover PLTR, CRWV, MSFT, Bloom Energy, Discove
 
 | Operation | First-attempt generated | Quality | p95 | Estimated cost/call |
 | --- | ---: | ---: | ---: | ---: |
-| GPT-5-mini Research | 24/24 | 4.958 | 16.645s under concurrency | $0.002026 |
+| GPT-5-mini Research | 24/24 | 4.958 | 15.031s under concurrency | $0.001794 |
 | GPT-5-mini Discover | 20/20 | 4.875 | 18.046s under concurrency | $0.002013 |
 | gpt-oss-120b Watchlist | 20/20 | 4.725 | 11.732s under concurrency | $0.000487 |
 

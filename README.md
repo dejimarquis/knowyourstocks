@@ -29,7 +29,7 @@ Selected routing:
 - Discover: `gpt-5-mini-intelligence`
 - Watchlist: `gpt-oss-120b-intelligence`
 
-GPT-5-mini remains the quality-first choice for Research and Discover. Under the final concurrent evaluation it generated 24/24 Research and 20/20 Discover responses with strict grounding. Observed use was about $0.0021 and $0.0019 per call respectively.
+GPT-5-mini remains the quality-first choice for Research and Discover. Under the final concurrent evaluation it generated 24/24 Research and 20/20 Discover responses with strict grounding. Observed use was about $0.0018 and $0.0020 per call respectively.
 
 The Watchlist contract was shortened to one concise fit, concern, and watch item per stock. With that bounded strict schema, gpt-oss-120b generated 20/20 grounded reviews, scored 4.725/5, reached an 11.732-second p95, and cost about $0.000487 per call. GPT-5-mini timed out on the multi-stock case, while both Phi-4-mini variants rejected strict JSON Schema and were unreliable in JSON mode. GPT-4.1-mini was not selectable because Azure rejected a new deployment as deprecating in April 2027. After live verification, retain GPT-5-mini and gpt-oss-120b; remove all Phi deployments and the legacy fallback setting.
 
